@@ -1,0 +1,11 @@
+node_modules
+.nuxt
+.output
+dist
+.env
+storage/*
+!storage/.gitkeep
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+{
+  "name": "icooro",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @icooro/api --filter @icooro/web dev",
+    "dev:api": "pnpm --filter @icooro/api dev",
+    "dev:web": "pnpm --filter @icooro/web dev",
+    "build": "pnpm --filter @icooro/shared build && pnpm --filter @icooro/api build && pnpm --filter @icooro/web build",
+    "typecheck": "pnpm --filter @icooro/shared build && pnpm --filter @icooro/shared typecheck && pnpm --filter @icooro/api typecheck && pnpm --filter @icooro/web typecheck"
+  }
+}
