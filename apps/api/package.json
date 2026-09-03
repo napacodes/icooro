@@ -7,15 +7,23 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
     "@icooro/shared": "workspace:*",
-    "hono": "^4.9.8"
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.9.8",
+    "mysql2": "^3.24.3"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }
