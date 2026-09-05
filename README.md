@@ -6,16 +6,16 @@ This repository is an early production foundation for the Icooro platform.
 
 ## Current development milestone
 
-Current milestone — Phase C1 Projects backend foundation:
+Current milestone — Phase C2 storytelling data foundation:
 
 - Vue 3 / Nuxt 3 frontend placeholder
-- Hono API with health endpoints and Projects CRUD routes
+- Hono API with health endpoints, Projects CRUD, and storytelling domain routes
 - Drizzle ORM schema and initial MySQL migration
 - Shared TypeScript package
 - Docker Compose (MySQL 8, API, web)
 - Local filesystem storage directory (empty)
 
-AI providers, video generation, authentication, and frontend project workflows are not implemented.
+AI providers, video generation, authentication, and production infrastructure are not implemented.
 
 ## Requirements
 
@@ -120,11 +120,34 @@ a project and must be a non-empty string of at most 255 characters.
 `description` may be a string or `null`, and `status` must be a non-empty string
 of at most 50 characters.
 
+## Storytelling foundation
+
+C2 establishes the relational hierarchy:
+
+`Project → Episode → Script, Characters, Locations, Props, Scenes → Shots → Shot Versions`
+
+Characters are project-owned so they can be reused across episodes. Scenes and
+shots remain episode/scene-owned, and shot-character links use the existing
+many-to-many join table. The existing C2 schema already contains these tables,
+foreign keys, cascade rules, and uniqueness constraints, so no new migration is
+required.
+
+The API provides nested creation/listing routes for episodes, scripts, creative
+entities, scenes, shots, shot-character relationships, and shot versions, along
+with top-level CRUD routes for Projects, Episodes, Scripts, Characters,
+Locations, Props, Scenes, Shots, Shot-Character relationships, and Shot
+Versions. See the route modules for the complete endpoint contract.
+
+The frontend provides the Projects page and a project workspace at
+`/projects/:id`. Future storytelling modules are shown as placeholders only;
+their production workflows are deferred to later phases.
+
 ## Current limitations
 
-- No episode, script, character, scene, or shot API routes
-- No AI provider abstraction or adapters
-- No video generation, mock generator, or job worker
-- No authentication, billing, or multi-tenant SaaS
+- No frontend CRUD workflows for episodes, scripts, characters, scenes, or shots
+- Authentication and authorization
+- AI provider integrations and video generation
+- Rendering, assets workflow, and jobs/workers
+- Billing and SaaS/multi-tenancy
 - Frontend is a placeholder homepage only
 - `DATABASE_URL` and `APP_ENCRYPTION_KEY` are reserved for later phases

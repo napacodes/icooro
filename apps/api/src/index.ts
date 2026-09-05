@@ -6,6 +6,18 @@ import { APP_SERVICE_API } from "@icooro/shared";
 import { env } from "./env.js";
 import { getDb } from "./db/index.js";
 import { projectsRoute } from "./routes/projects.js";
+import {
+  episodesRoute,
+  scriptsRoute,
+  charactersRoute,
+  locationsRoute,
+  propsRoute,
+  scenesRoute,
+  shotsRoute,
+  shotCharactersRoute,
+  shotVersionsRoute,
+  nestedStorytellingRoute,
+} from "./routes/storytelling.js";
 
 const app = new Hono();
 
@@ -34,6 +46,16 @@ app.get("/api/v1/health/db", async (c) => {
 });
 
 app.route("/api/v1/projects", projectsRoute);
+app.route("/api/v1/episodes", episodesRoute);
+app.route("/api/v1/scripts", scriptsRoute);
+app.route("/api/v1/characters", charactersRoute);
+app.route("/api/v1/locations", locationsRoute);
+app.route("/api/v1/props", propsRoute);
+app.route("/api/v1/scenes", scenesRoute);
+app.route("/api/v1/shots", shotsRoute);
+app.route("/api/v1/shot-characters", shotCharactersRoute);
+app.route("/api/v1/shot-versions", shotVersionsRoute);
+app.route("/api/v1", nestedStorytellingRoute);
 
 serve(
   {
