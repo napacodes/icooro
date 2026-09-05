@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { APP_SERVICE_API } from "@icooro/shared";
 import { env } from "./env.js";
 import { getDb } from "./db/index.js";
+import { projectsRoute } from "./routes/projects.js";
 
 const app = new Hono();
 
@@ -31,6 +32,8 @@ app.get("/api/v1/health/db", async (c) => {
     return c.json({ ok: false }, 503);
   }
 });
+
+app.route("/api/v1/projects", projectsRoute);
 
 serve(
   {

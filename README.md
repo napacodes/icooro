@@ -2,19 +2,20 @@
 
 Icooro is an original AI video production platform. It is being built to create educational YouTube Shorts, animated stories, short dramas, social media videos, marketing videos, and later SaaS customer projects.
 
-This repository is **Phase A**: a runnable monorepo skeleton. It is not a product yet.
+This repository is an early production foundation for the Icooro platform.
 
 ## Current development milestone
 
-Phase A — initialize the workspace:
+Current milestone — Phase C1 Projects backend foundation:
 
 - Vue 3 / Nuxt 3 frontend placeholder
-- Hono API with `GET /health`
+- Hono API with health endpoints and Projects CRUD routes
+- Drizzle ORM schema and initial MySQL migration
 - Shared TypeScript package
 - Docker Compose (MySQL 8, API, web)
 - Local filesystem storage directory (empty)
 
-AI providers, video generation, jobs, database schema, and application domain models are **not** implemented.
+AI providers, video generation, authentication, and frontend project workflows are not implemented.
 
 ## Requirements
 
@@ -60,7 +61,7 @@ docker compose up --build
 - Web: `http://localhost:${WEB_PORT}` (default `3000`)
 - MySQL: `localhost:${MYSQL_PORT}` (default `3306`)
 
-The API does not connect to MySQL in Phase A. The database service is included so later phases can use it.
+The API requires `DATABASE_URL` and uses the existing Drizzle schema for database-backed routes.
 
 ## Starting development servers
 
@@ -102,12 +103,28 @@ Expected JSON:
 }
 ```
 
+## Projects API
+
+The API exposes unauthenticated CRUD endpoints under `/api/v1/projects`:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/projects` | List projects |
+| `POST` | `/api/v1/projects` | Create a project |
+| `GET` | `/api/v1/projects/:id` | Get a project |
+| `PATCH` | `/api/v1/projects/:id` | Update one or more project fields |
+| `DELETE` | `/api/v1/projects/:id` | Delete a project and its cascading records |
+
+Create and update requests must contain JSON. `name` is required when creating
+a project and must be a non-empty string of at most 255 characters.
+`description` may be a string or `null`, and `status` must be a non-empty string
+of at most 50 characters.
+
 ## Current limitations
 
-- No projects, episodes, scripts, characters, scenes, or shots
+- No episode, script, character, scene, or shot API routes
 - No AI provider abstraction or adapters
 - No video generation, mock generator, or job worker
-- No MySQL schema or migrations
 - No authentication, billing, or multi-tenant SaaS
 - Frontend is a placeholder homepage only
 - `DATABASE_URL` and `APP_ENCRYPTION_KEY` are reserved for later phases
