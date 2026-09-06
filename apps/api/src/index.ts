@@ -15,6 +15,8 @@ import {
   scenesRoute,
   shotsRoute,
   shotCharactersRoute,
+  shotLocationsRoute,
+  shotPropsRoute,
   shotVersionsRoute,
   nestedStorytellingRoute,
 } from "./routes/storytelling.js";
@@ -54,6 +56,8 @@ app.route("/api/v1/props", propsRoute);
 app.route("/api/v1/scenes", scenesRoute);
 app.route("/api/v1/shots", shotsRoute);
 app.route("/api/v1/shot-characters", shotCharactersRoute);
+app.route("/api/v1/shot-locations", shotLocationsRoute);
+app.route("/api/v1/shot-props", shotPropsRoute);
 app.route("/api/v1/shot-versions", shotVersionsRoute);
 app.route("/api/v1", nestedStorytellingRoute);
 

@@ -154,18 +154,24 @@ The existing C2 resource groups now form the C3 production contract:
 - `GET/POST /api/v1/episodes/:episodeId/script`
 - `GET/POST /api/v1/episodes/:episodeId/{characters|locations|props|scenes}`
 - `GET/POST /api/v1/scenes/:sceneId/shots`
-- `GET/POST /api/v1/shots/:shotId/{characters|versions}`
+- `GET/POST /api/v1/projects/:projectId/{characters|locations|props}`
+- `GET/POST /api/v1/shots/:shotId/{characters|locations|props|versions}` with relationship deletion routes
 - Top-level `GET/PATCH/DELETE` routes for all storytelling resources
 
 Shot records carry production purpose, shot type, framing, camera movement and
 angle, visual/action/dialogue descriptions, transitions, notes, duration,
 ordering, and status. Shot versions have deterministic `(shot, version)`
 identity and a `productionReady` marker. Parent changes are rejected after
-creation to protect hierarchy ownership.
+creation to protect hierarchy ownership. Shot-character, shot-location, and
+shot-prop relationships are project-scoped and reject duplicate or
+cross-project assignments. The workspace requests creative assets through
+project-scoped endpoints rather than loading global collections.
 
-The C3 migration is `apps/api/drizzle/0001_misty_forgotten_one.sql` and is
-non-destructive. Apply it with `pnpm --filter @icooro/api db:migrate` against
-the configured MySQL database before starting the API.
+C3 migrations are `apps/api/drizzle/0001_misty_forgotten_one.sql` (shot production
+fields) and `apps/api/drizzle/0002_dusty_johnny_storm.sql` (shot-location and
+shot-prop join tables). Both are non-destructive. Apply them with
+`pnpm --filter @icooro/api db:migrate` against the configured MySQL database
+before starting the API.
 
 ## Current limitations
 

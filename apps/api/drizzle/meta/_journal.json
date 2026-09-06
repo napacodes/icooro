@@ -15,6 +15,13 @@
       "when": 1788694421641,
       "tag": "0001_misty_forgotten_one",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1788698199477,
+      "tag": "0002_dusty_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,8 @@ export * from "./props.js";
 export * from "./scenes.js";
 export * from "./shots.js";
 export * from "./shot_characters.js";
+export * from "./shot_locations.js";
+export * from "./shot_props.js";
 export * from "./shot_versions.js";
 export * from "./assets.js";
 export * from "./ai_providers.js";
