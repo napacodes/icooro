@@ -27,6 +27,7 @@ export const shotVersions = mysqlTable(
     }),
     duration: int("duration"),
     error: text("error"),
+    productionReady: int("production_ready").notNull().default(0),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

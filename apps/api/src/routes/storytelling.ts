@@ -68,6 +68,9 @@ function routeFor(config: Config) {
       if (definition.kind === "string" && definition.max && (value as string).length > definition.max) {
         return { error: `${name} must be ${definition.max} characters or fewer` };
       }
+      if (definition.kind === "number" && (!Number.isFinite(value) || (value as number) < 0) && name === "duration") {
+        return { error: `${name} must be a non-negative number` };
+      }
       if (definition.kind === "number" && (!Number.isInteger(value) || (value as number) <= 0) &&
         (name === "version" || name === "orderIndex" || name === "episodeNumber")) {
         return { error: `${name} must be a positive integer` };
@@ -125,10 +128,15 @@ function routeFor(config: Config) {
     const checked = values(input, true);
     if ("error" in checked) return c.json(bad(checked.error), 400);
     try {
-      if (!(await exists(c.req.param("id")))) return c.json(bad("Record not found", 404), 404);
+      const [existing] = await getDb().select().from(config.table).where(eq(config.id, c.req.param("id")));
+      if (!existing) return c.json(bad("Record not found", 404), 404);
       if (config.parent && config.parent.input in checked.value &&
         !(await parentExists(config.parent, checked.value[config.parent.input]))) {
         return c.json(bad(`${config.parent.label} not found`, 404), 404);
+      }
+      if (config.parent && config.parent.input in checked.value &&
+        existing[config.parent.input] !== checked.value[config.parent.input]) {
+        return c.json(bad(`${config.parent.label} cannot be changed after creation`, 409), 409);
       }
       await getDb().update(config.table).set(checked.value).where(eq(config.id, c.req.param("id")));
       const [row] = await getDb().select().from(config.table).where(eq(config.id, c.req.param("id")));
@@ -156,8 +164,23 @@ export const charactersRoute = projectEntity(characters, characters.id, { projec
 export const locationsRoute = projectEntity(locations, locations.id, { projectId: { column: locations.projectId, required: true, kind: "string" }, name: { column: locations.name, required: true, max: 255, kind: "string" }, description: { column: locations.description, nullable: true, kind: "string" }, visualDescription: { column: locations.visualDescription, nullable: true, kind: "string" } });
 export const propsRoute = projectEntity(props, props.id, { projectId: { column: props.projectId, required: true, kind: "string" }, name: { column: props.name, required: true, max: 255, kind: "string" }, description: { column: props.description, nullable: true, kind: "string" }, visualDescription: { column: props.visualDescription, nullable: true, kind: "string" } });
 export const scenesRoute = routeFor({ table: scenes, id: scenes.id, parent: { input: "episodeId", table: episodes, id: episodes.id, label: "Episode" }, order: [asc(scenes.orderIndex), asc(scenes.id)], fields: { episodeId: { column: scenes.episodeId, required: true, kind: "string" }, name: { column: scenes.name, required: true, max: 255, kind: "string" }, description: { column: scenes.description, nullable: true, kind: "string" }, orderIndex: { column: scenes.orderIndex, required: true, kind: "number" } } });
-export const shotsRoute = routeFor({ table: shots, id: shots.id, parent: { input: "sceneId", table: scenes, id: scenes.id, label: "Scene" }, order: [asc(shots.orderIndex), asc(shots.id)], fields: { sceneId: { column: shots.sceneId, required: true, kind: "string" }, orderIndex: { column: shots.orderIndex, required: true, kind: "number" }, prompt: { column: shots.prompt, nullable: true, kind: "string" }, duration: { column: shots.duration, nullable: true, kind: "number" }, status: { column: shots.status, max: 50, kind: "string" } } });
-export const shotVersionsRoute = routeFor({ table: shotVersions, id: shotVersions.id, parent: { input: "shotId", table: shots, id: shots.id, label: "Shot" }, order: [asc(shotVersions.version), asc(shotVersions.id)], fields: { shotId: { column: shotVersions.shotId, required: true, kind: "string" }, version: { column: shotVersions.version, required: true, kind: "number" }, prompt: { column: shotVersions.prompt, nullable: true, kind: "string" }, status: { column: shotVersions.status, max: 50, kind: "string" }, providerId: { column: shotVersions.providerId, nullable: true, kind: "string" }, modelId: { column: shotVersions.modelId, nullable: true, kind: "string" }, assetId: { column: shotVersions.assetId, nullable: true, kind: "string" }, duration: { column: shotVersions.duration, nullable: true, kind: "number" }, error: { column: shotVersions.error, nullable: true, kind: "string" } } });
+const nullableText = (column: any, max?: number) => max === undefined
+  ? { column, nullable: true, kind: "string" as const }
+  : { column, nullable: true, max, kind: "string" as const };
+export const shotsRoute = routeFor({ table: shots, id: shots.id, parent: { input: "sceneId", table: scenes, id: scenes.id, label: "Scene" }, order: [asc(shots.orderIndex), asc(shots.id)], fields: {
+  sceneId: { column: shots.sceneId, required: true, kind: "string" }, orderIndex: { column: shots.orderIndex, required: true, kind: "number" },
+  purpose: nullableText(shots.purpose, 100), shotType: nullableText(shots.shotType, 100), framing: nullableText(shots.framing, 100),
+  cameraMovement: nullableText(shots.cameraMovement, 100), cameraAngle: nullableText(shots.cameraAngle, 100), prompt: nullableText(shots.prompt),
+  visualDescription: nullableText(shots.visualDescription), actionDescription: nullableText(shots.actionDescription), dialogue: nullableText(shots.dialogue),
+  transition: nullableText(shots.transition, 100), productionNotes: nullableText(shots.productionNotes), duration: { column: shots.duration, nullable: true, kind: "number" },
+  status: { column: shots.status, max: 50, kind: "string" },
+} });
+export const shotVersionsRoute = routeFor({ table: shotVersions, id: shotVersions.id, parent: { input: "shotId", table: shots, id: shots.id, label: "Shot" }, order: [asc(shotVersions.version), asc(shotVersions.id)], fields: {
+  shotId: { column: shotVersions.shotId, required: true, kind: "string" }, version: { column: shotVersions.version, required: true, kind: "number" }, prompt: nullableText(shotVersions.prompt),
+  status: { column: shotVersions.status, max: 50, kind: "string" }, providerId: nullableText(shotVersions.providerId), modelId: nullableText(shotVersions.modelId),
+  assetId: nullableText(shotVersions.assetId), duration: { column: shotVersions.duration, nullable: true, kind: "number" }, error: nullableText(shotVersions.error),
+  productionReady: { column: shotVersions.productionReady, kind: "number" },
+} });
 
 export const shotCharactersRoute = new Hono();
 shotCharactersRoute.get("/", async (c) => {
@@ -300,12 +323,15 @@ nestedStorytellingRoute.post("/scenes/:sceneId/shots", async (c) => {
   if (!scene) return c.json(bad("Scene not found", 404), 404);
   if (!input || typeof input.orderIndex !== "number" || !Number.isInteger(input.orderIndex) || input.orderIndex <= 0) return c.json(bad("orderIndex must be a positive integer"), 400);
   if ("prompt" in input && input.prompt !== null && typeof input.prompt !== "string") return c.json(bad("prompt must be a string or null"), 400);
-  if ("duration" in input && input.duration !== null && typeof input.duration !== "number") return c.json(bad("duration must be a number or null"), 400);
+  if ("duration" in input && input.duration !== null && (typeof input.duration !== "number" || !Number.isFinite(input.duration) || input.duration < 0)) return c.json(bad("duration must be a non-negative number or null"), 400);
   if ("status" in input && (typeof input.status !== "string" || input.status.trim() === "")) return c.json(bad("status must be a non-empty string"), 400);
-  if (Object.keys(input).some((field) => !["orderIndex", "prompt", "duration", "status"].includes(field))) return c.json(bad("Unsupported shot field"), 400);
+  const shotFields = ["orderIndex", "purpose", "shotType", "framing", "cameraMovement", "cameraAngle", "prompt", "visualDescription", "actionDescription", "dialogue", "transition", "productionNotes", "duration", "status"];
+  if (Object.keys(input).some((field) => !shotFields.includes(field))) return c.json(bad("Unsupported shot field"), 400);
   try {
     const shotValues: Record<string, unknown> = { sceneId: scene.id, orderIndex: input.orderIndex };
-    if (typeof input.prompt === "string" || input.prompt === null) shotValues.prompt = input.prompt;
+    for (const field of ["purpose", "shotType", "framing", "cameraMovement", "cameraAngle", "prompt", "visualDescription", "actionDescription", "dialogue", "transition", "productionNotes"]) {
+      if (typeof input[field] === "string" || input[field] === null) shotValues[field] = typeof input[field] === "string" ? input[field].trim() : null;
+    }
     if (typeof input.duration === "number" || input.duration === null) shotValues.duration = input.duration;
     if (typeof input.status === "string" && input.status.trim()) shotValues.status = input.status.trim();
     const [created] = await getDb().insert(shots).values(shotValues as any).$returningId();
@@ -351,7 +377,8 @@ nestedStorytellingRoute.post("/shots/:shotId/versions", async (c) => {
     if (field in input && input[field] !== null && typeof input[field] !== "string") return c.json(bad(`${field} must be a string or null`), 400);
   }
   if ("status" in input && (typeof input.status !== "string" || input.status.trim() === "")) return c.json(bad("status must be a non-empty string"), 400);
-  if ("duration" in input && input.duration !== null && typeof input.duration !== "number") return c.json(bad("duration must be a number or null"), 400);
+  if ("duration" in input && input.duration !== null && (typeof input.duration !== "number" || !Number.isFinite(input.duration) || input.duration < 0)) return c.json(bad("duration must be a non-negative number or null"), 400);
+  if ("productionReady" in input && (input.productionReady !== 0 && input.productionReady !== 1)) return c.json(bad("productionReady must be 0 or 1"), 400);
   const [shot] = await getDb().select({ id: shots.id }).from(shots).where(eq(shots.id, c.req.param("shotId")));
   if (!shot) return c.json(bad("Shot not found", 404), 404);
   try {
@@ -362,6 +389,7 @@ nestedStorytellingRoute.post("/shots/:shotId/versions", async (c) => {
       if (typeof input[field] === "string" || input[field] === null) versionValues[field] = input[field];
     }
     if (typeof input.duration === "number" || input.duration === null) versionValues.duration = input.duration;
+    if (input.productionReady === 0 || input.productionReady === 1) versionValues.productionReady = input.productionReady;
     const [created] = await getDb().insert(shotVersions).values(versionValues as any).$returningId();
     if (!created) return c.json(internal(), 500);
     const [row] = await getDb().select().from(shotVersions).where(eq(shotVersions.id, created.id));

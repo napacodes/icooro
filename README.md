@@ -6,9 +6,9 @@ This repository is an early production foundation for the Icooro platform.
 
 ## Current development milestone
 
-Current milestone — Phase C2 storytelling data foundation:
+Current milestone — Phase C3 creative production foundation:
 
-- Vue 3 / Nuxt 3 frontend placeholder
+- Vue 3 / Nuxt 3 creative production workspace
 - Hono API with health endpoints, Projects CRUD, and storytelling domain routes
 - Drizzle ORM schema and initial MySQL migration
 - Shared TypeScript package
@@ -139,15 +139,38 @@ Locations, Props, Scenes, Shots, Shot-Character relationships, and Shot
 Versions. See the route modules for the complete endpoint contract.
 
 The frontend provides the Projects page and a project workspace at
-`/projects/:id`. Future storytelling modules are shown as placeholders only;
-their production workflows are deferred to later phases.
+`/projects/:id`. The workspace supports episode and script version CRUD,
+project-owned character/location/prop CRUD, ordered scene and shot planning,
+shot production metadata, shot-character assignment, and ordered shot-version
+revisions with a production-ready marker. It uses the API as its source of
+truth and includes loading, empty, error, success, and destructive-action
+confirmation states.
+
+## Creative production API
+
+The existing C2 resource groups now form the C3 production contract:
+
+- `GET/POST /api/v1/projects/:projectId/episodes`
+- `GET/POST /api/v1/episodes/:episodeId/script`
+- `GET/POST /api/v1/episodes/:episodeId/{characters|locations|props|scenes}`
+- `GET/POST /api/v1/scenes/:sceneId/shots`
+- `GET/POST /api/v1/shots/:shotId/{characters|versions}`
+- Top-level `GET/PATCH/DELETE` routes for all storytelling resources
+
+Shot records carry production purpose, shot type, framing, camera movement and
+angle, visual/action/dialogue descriptions, transitions, notes, duration,
+ordering, and status. Shot versions have deterministic `(shot, version)`
+identity and a `productionReady` marker. Parent changes are rejected after
+creation to protect hierarchy ownership.
+
+The C3 migration is `apps/api/drizzle/0001_misty_forgotten_one.sql` and is
+non-destructive. Apply it with `pnpm --filter @icooro/api db:migrate` against
+the configured MySQL database before starting the API.
 
 ## Current limitations
 
-- No frontend CRUD workflows for episodes, scripts, characters, scenes, or shots
+- No real AI generation, rendering, voice generation, workers, or production queue
 - Authentication and authorization
-- AI provider integrations and video generation
-- Rendering, assets workflow, and jobs/workers
 - Billing and SaaS/multi-tenancy
-- Frontend is a placeholder homepage only
-- `DATABASE_URL` and `APP_ENCRYPTION_KEY` are reserved for later phases
+- Binary asset upload and reference-asset management
+- `APP_ENCRYPTION_KEY` is reserved for later phases
