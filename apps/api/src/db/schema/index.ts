@@ -11,6 +11,8 @@ export * from "./shot_locations.js";
 export * from "./shot_props.js";
 export * from "./shot_versions.js";
 export * from "./assets.js";
+export * from "./asset_versions.js";
+export * from "./shot_assets.js";
 export * from "./ai_providers.js";
 export * from "./ai_models.js";
 export * from "./ai_jobs.js";

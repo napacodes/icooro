@@ -14,7 +14,7 @@ export const characters = mysqlTable(
     description: text("description"),
     visualDescription: text("visual_description"),
     referenceAssetId: varchar("reference_asset_id", { length: 36 }).references(
-      () => assets.id,
+      (): any => assets.id,
       { onDelete: "set null" },
     ),
     createdAt: createdAtColumn(),

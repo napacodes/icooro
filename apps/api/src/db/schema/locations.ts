@@ -1,5 +1,6 @@
 import { index, mysqlTable, text, varchar } from "drizzle-orm/mysql-core";
 import { projects } from "./projects.js";
+import { assets } from "./assets.js";
 import { createdAtColumn, idColumn, updatedAtColumn } from "./helpers.js";
 
 export const locations = mysqlTable(
@@ -12,10 +13,15 @@ export const locations = mysqlTable(
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
     visualDescription: text("visual_description"),
+    referenceAssetId: varchar("reference_asset_id", { length: 36 }).references(
+      (): any => assets.id,
+      { onDelete: "set null" },
+    ),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
     index("locations_project_id_idx").on(table.projectId),
+    index("locations_reference_asset_id_idx").on(table.referenceAssetId),
   ],
 );

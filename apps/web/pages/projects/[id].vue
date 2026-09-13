@@ -8,6 +8,7 @@ type Shot = { id: string; sceneId: string; orderIndex: number; purpose: string |
 type Version = { id: string; shotId: string; version: number; prompt: string | null; status: string; duration: number | null; productionReady: number };
 type Link = { id: string; shotId: string; characterId: string };
 type AssetLink = { id: string; shotId: string; locationId?: string; propId?: string };
+type MediaAsset = { id: string; projectId: string; name: string; type: string; status: string; description: string | null; approvedVersionId: string | null };
 type ListResponse<T> = { data: T[] };
 type SingleResponse<T> = { data: T };
 
@@ -27,6 +28,7 @@ const versions = ref<Version[]>([]);
 const assignedCharacters = ref<Link[]>([]);
 const assignedLocations = ref<AssetLink[]>([]);
 const assignedProps = ref<AssetLink[]>([]);
+const mediaAssets = ref<MediaAsset[]>([]);
 const selectedEpisode = ref<Episode | null>(null);
 const selectedScene = ref<Scene | null>(null);
 const selectedShot = ref<Shot | null>(null);
@@ -40,6 +42,7 @@ const projectForm = reactive({ name: "", description: "", status: "" });
 const episodeForm = reactive({ title: "", episodeNumber: 1, status: "draft" });
 const scriptForm = reactive({ content: "", version: 1 });
 const assetForm = reactive({ name: "", description: "", visualDescription: "" });
+const mediaAssetForm = reactive({ name: "", type: "image", description: "" });
 const sceneForm = reactive({ name: "", description: "", orderIndex: 1 });
 const shotForm = reactive({ orderIndex: 1, purpose: "", shotType: "", framing: "", cameraMovement: "", cameraAngle: "", prompt: "", visualDescription: "", actionDescription: "", dialogue: "", transition: "", productionNotes: "", duration: 0, status: "pending" });
 const versionForm = reactive({ version: 1, prompt: "", status: "pending", duration: 0, productionReady: 0 });
@@ -64,18 +67,49 @@ async function loadProject() {
     const response = await request<SingleResponse<Project>>(`/projects/${route.params.id}`);
     project.value = response.data;
     projectForm.name = response.data.name; projectForm.description = response.data.description ?? ""; projectForm.status = response.data.status;
-    const [episodeResponse, characterResponse, locationResponse, propResponse] = await Promise.all([
+    const [episodeResponse, characterResponse, locationResponse, propResponse, mediaResponse] = await Promise.all([
       request<ListResponse<Episode>>(`/projects/${route.params.id}/episodes`),
       request<ListResponse<Asset>>(`/projects/${route.params.id}/characters`),
       request<ListResponse<Asset>>(`/projects/${route.params.id}/locations`),
       request<ListResponse<Asset>>(`/projects/${route.params.id}/props`),
+      request<ListResponse<MediaAsset>>(`/projects/${route.params.id}/assets`),
     ]);
     episodes.value = episodeResponse.data;
     characters.value = characterResponse.data;
     locations.value = locationResponse.data;
     props.value = propResponse.data;
+    mediaAssets.value = mediaResponse.data;
     if (episodes.value[0]) await selectEpisode(episodes.value[0]);
   } catch (cause) { error.value = messageFromError(cause, "Unable to load this production workspace."); } finally { loading.value = false; }
+}
+async function loadMediaAssets() {
+  try {
+    const res = await request<ListResponse<MediaAsset>>(`/projects/${route.params.id}/assets`);
+    mediaAssets.value = res.data;
+  } catch (cause) {
+    console.error(cause);
+  }
+}
+async function saveMediaAsset() {
+  saving.value = true;
+  clearFormError();
+  try {
+    await request<SingleResponse<MediaAsset>>(`/projects/${route.params.id}/assets`, {
+      method: "POST",
+      body: {
+        name: mediaAssetForm.name,
+        type: mediaAssetForm.type,
+        description: nullable(mediaAssetForm.description),
+      },
+    });
+    mediaAssetForm.name = "";
+    mediaAssetForm.description = "";
+    await loadMediaAssets();
+  } catch (cause) {
+    formError.value = messageFromError(cause, "Unable to save media asset.");
+  } finally {
+    saving.value = false;
+  }
 }
 async function selectEpisode(episode: Episode) {
   selectedEpisode.value = episode; selectedScene.value = null; selectedShot.value = null; shots.value = []; versions.value = []; assignedCharacters.value = []; assignedLocations.value = []; assignedProps.value = [];
@@ -160,8 +194,13 @@ onMounted(loadProject);
     <template v-else-if="project">
       <header class="header"><p class="eyebrow">Creative production</p><h1>{{ project.name }}</h1><p class="muted">{{ project.description || "Plan episodes, assets, scenes, shots, and revisions." }}</p></header>
       <section class="panel project-panel"><div class="section-heading"><h2>Project information</h2><button class="icon-button danger" @click="deleteProject">Delete project</button></div><form class="form" @submit.prevent="saveProject"><input v-model="projectForm.name" required maxlength="255" placeholder="Project name" /><textarea v-model="projectForm.description" rows="2" placeholder="Description" /><input v-model="projectForm.status" required maxlength="50" placeholder="Status" /><button :disabled="saving">{{ saving ? "Saving…" : "Save project" }}</button></form></section>
-      <nav class="tabs" aria-label="Production sections"><button :class="{ active: tab === 'episodes' }" @click="tab = 'episodes'">Episodes & scripts</button><button :class="{ active: tab === 'assets' }" @click="tab = 'assets'">Creative assets</button><button :class="{ active: tab === 'production' }" @click="tab = 'production'">Scenes & shots</button></nav>
+      <nav class="tabs" aria-label="Production sections"><button :class="{ active: tab === 'episodes' }" @click="tab = 'episodes'">Episodes & scripts</button><button :class="{ active: tab === 'assets' }" @click="tab = 'assets'">Creative assets</button><button :class="{ active: tab === 'media' }" @click="tab = 'media'">Media assets</button><button :class="{ active: tab === 'production' }" @click="tab = 'production'">Scenes & shots</button></nav>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
+
+      <section v-if="tab === 'media'" class="section-grid">
+        <div class="panel"><div class="section-heading"><h2>Add media asset</h2></div><form class="form" @submit.prevent="saveMediaAsset"><input v-model="mediaAssetForm.name" required maxlength="255" placeholder="Asset name" /><select v-model="mediaAssetForm.type"><option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option></select><textarea v-model="mediaAssetForm.description" rows="2" placeholder="Description" /><button :disabled="saving">{{ saving ? "Saving…" : "Add media asset" }}</button></form></div>
+        <div class="panel"><div class="section-heading"><h2>Media assets</h2><span class="count">{{ mediaAssets.length }}</span></div><p v-if="!mediaAssets.length" class="empty muted">No media assets in this project yet.</p><ul class="item-list"><li v-for="media in mediaAssets" :key="media.id"><div><strong>{{ media.name }}</strong><small>{{ media.type }} · {{ media.status }}{{ media.description ? ` · ${media.description}` : '' }}</small></div></li></ul></div>
+      </section>
 
       <section v-if="tab === 'episodes'" class="section-grid">
         <div class="panel"><div class="section-heading"><h2>Episodes</h2><span class="count">{{ episodes.length }}</span></div><form class="form" @submit.prevent="saveEpisode"><input v-model="episodeForm.title" required maxlength="255" placeholder="Episode title" /><input v-model.number="episodeForm.episodeNumber" type="number" min="1" required placeholder="Number" /><input v-model="episodeForm.status" required maxlength="50" placeholder="Status" /><button :disabled="saving">{{ editing.episode ? "Update episode" : "Add episode" }}</button></form><p v-if="!episodes.length" class="empty muted">No episodes yet. Add the first production unit above.</p><ul class="item-list"><li v-for="episode in episodes" :key="episode.id" :class="{ selected: selectedEpisode?.id === episode.id }"><button class="item-button" @click="selectEpisode(episode)"><strong>{{ episode.episodeNumber }}. {{ episode.title }}</strong><small>{{ episode.status }}</small></button><button class="icon-button" title="Edit episode" @click="fillEpisode(episode)">Edit</button><button class="icon-button danger" title="Delete episode" @click="deleteEpisode(episode)">Delete</button></li></ul></div>

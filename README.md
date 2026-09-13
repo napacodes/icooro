@@ -6,16 +6,20 @@ This repository is an early production foundation for the Icooro platform.
 
 ## Current development milestone
 
-Current milestone — Phase C3 creative production foundation:
+## Current development milestone
 
-- Vue 3 / Nuxt 3 creative production workspace
-- Hono API with health endpoints, Projects CRUD, and storytelling domain routes
-- Drizzle ORM schema and initial MySQL migration
+Current milestone — Phase C4 media assets foundation:
+
+- Vue 3 / Nuxt 3 creative production workspace with Media Assets management
+- Hono API with Projects, storytelling domain, media assets, shot attachments, AI jobs, and providers
+- Storage Abstraction (`StorageProvider`) with local disk driver and strict path traversal protection
+- AI Provider Abstraction (`ProviderRegistry`) with capability lookups, credential stripping, and `MockMediaProvider`
+- Drizzle ORM schema and migrations (`0001`, `0002`, `0003`)
 - Shared TypeScript package
+- Comprehensive automated test suite (`pnpm test`) covering all 17 media lifecycle, storage, and provider scenarios
 - Docker Compose (MySQL 8, API, web)
-- Local filesystem storage directory (empty)
 
-AI providers, video generation, authentication, and production infrastructure are not implemented.
+Production AI vendor calls (e.g. Kling, Veo, Flux), video timeline editor, server-side FFmpeg rendering pipelines, billing, and auth are planned for subsequent phases.
 
 ## Requirements
 
@@ -46,7 +50,17 @@ Copy-Item .env.example .env
 
 `.env.example` lists variable names only. It does not contain real secrets or API keys.
 
-`NUXT_PUBLIC_API_BASE` is the browser-visible API origin (not a secret). Provider keys must never be placed in Nuxt public runtime config.
+- `STORAGE_DRIVER`: storage backend (`local`). Default: `local`.
+- `STORAGE_LOCAL_ROOT`: local filesystem root for media files. Default: `./storage`.
+- `NUXT_PUBLIC_API_BASE`: browser-visible API origin (not a secret). Provider keys must never be placed in Nuxt public runtime config.
+
+## Running tests
+
+The codebase includes automated tests covering storage, path traversal security, provider registries, generation job state transitions, validation schemas, and the complete asset lifecycle:
+
+```bash
+pnpm test
+```
 
 ## Starting Docker
 
@@ -87,6 +101,7 @@ Useful scripts:
 | `pnpm dev` | API and web in watch mode |
 | `pnpm build` | Build shared, API, and web |
 | `pnpm typecheck` | Typecheck all workspaces |
+| `pnpm test` | Run automated test suite |
 
 ## Health endpoint
 
@@ -115,68 +130,60 @@ The API exposes unauthenticated CRUD endpoints under `/api/v1/projects`:
 | `PATCH` | `/api/v1/projects/:id` | Update one or more project fields |
 | `DELETE` | `/api/v1/projects/:id` | Delete a project and its cascading records |
 
-Create and update requests must contain JSON. `name` is required when creating
-a project and must be a non-empty string of at most 255 characters.
-`description` may be a string or `null`, and `status` must be a non-empty string
-of at most 50 characters.
-
 ## Storytelling foundation
 
-C2 establishes the relational hierarchy:
+C2 & C3 establish the relational hierarchy:
 
 `Project → Episode → Script, Characters, Locations, Props, Scenes → Shots → Shot Versions`
 
 Characters are project-owned so they can be reused across episodes. Scenes and
 shots remain episode/scene-owned, and shot-character links use the existing
-many-to-many join table. The existing C2 schema already contains these tables,
-foreign keys, cascade rules, and uniqueness constraints, so no new migration is
-required.
+many-to-many join table.
 
-The API provides nested creation/listing routes for episodes, scripts, creative
-entities, scenes, shots, shot-character relationships, and shot versions, along
-with top-level CRUD routes for Projects, Episodes, Scripts, Characters,
-Locations, Props, Scenes, Shots, Shot-Character relationships, and Shot
-Versions. See the route modules for the complete endpoint contract.
+## Phase C4: Media Assets Foundation
 
-The frontend provides the Projects page and a project workspace at
-`/projects/:id`. The workspace supports episode and script version CRUD,
-project-owned character/location/prop CRUD, ordered scene and shot planning,
-shot production metadata, shot-character assignment, and ordered shot-version
-revisions with a production-ready marker. It uses the API as its source of
-truth and includes loading, empty, error, success, and destructive-action
-confirmation states.
+Phase C4 introduces the media data architecture and asset lifecycle.
 
-## Creative production API
+### Core Concepts
 
-The existing C2 resource groups now form the C3 production contract:
+1. **Logical Asset (`assets`)**:
+   Represents a media concept (e.g. "Hero Character Model", "Intro Plate Video", "Laser Gun Foley"). Contains project scoping, entity associations (episode, scene, shot, character, location, prop), lifecycle status (`draft`, `processing`, `ready`, `approved`, `rejected`, `archived`), and points to the currently `approved_version_id`.
 
-- `GET/POST /api/v1/projects/:projectId/episodes`
-- `GET/POST /api/v1/episodes/:episodeId/script`
-- `GET/POST /api/v1/episodes/:episodeId/{characters|locations|props|scenes}`
-- `GET/POST /api/v1/scenes/:sceneId/shots`
-- `GET/POST /api/v1/projects/:projectId/{characters|locations|props}`
-- `GET/POST /api/v1/shots/:shotId/{characters|locations|props|versions}` with relationship deletion routes
-- Top-level `GET/PATCH/DELETE` routes for all storytelling resources
+2. **Physical Asset Version (`asset_versions`)**:
+   Immutable file revision associated with an asset. Identified deterministically by `(asset_id, version)` where versions are sequential positive integers (v1, v2, ...). Stores technical metadata (file size, checksum, mime type, resolution, fps, duration, sample rate, codec), source kind (`upload`, `generated`, `derived`, `imported`), and generation prompt/job references.
 
-Shot records carry production purpose, shot type, framing, camera movement and
-angle, visual/action/dialogue descriptions, transitions, notes, duration,
-ordering, and status. Shot versions have deterministic `(shot, version)`
-identity and a `productionReady` marker. Parent changes are rejected after
-creation to protect hierarchy ownership. Shot-character, shot-location, and
-shot-prop relationships are project-scoped and reject duplicate or
-cross-project assignments. The workspace requests creative assets through
-project-scoped endpoints rather than loading global collections.
+3. **Generation Job (`ai_jobs`)**:
+   Represents an AI task execution (prompt, settings, progress, provider, model) separate from the resulting media asset. Follows a strict lifecycle state machine (`queued` → `submitted` → `processing` → `downloading` → `completed` / `failed` / `cancelled`). On completion, a new `asset_version` is produced and attached.
 
-C3 migrations are `apps/api/drizzle/0001_misty_forgotten_one.sql` (shot production
-fields) and `apps/api/drizzle/0002_dusty_johnny_storm.sql` (shot-location and
-shot-prop join tables). Both are non-destructive. Apply them with
-`pnpm --filter @icooro/api db:migrate` against the configured MySQL database
-before starting the API.
+4. **Shot Attachments (`shot_assets`)**:
+   Normalized join table linking assets to shots with roles (`reference`, `background`, `plate`, `vfx_element`, `audio_track`). Enforces strict project isolation.
+
+### Storage Abstraction
+
+The storage layer exposes `StorageProvider` interface implemented by `LocalStorageProvider` (`apps/api/src/storage/`):
+- Clean abstraction for `put`, `get`, `exists`, `delete`, and `getMetadata`.
+- Strict path traversal prevention: rejects `..`, absolute paths, Windows drive letters, null bytes, and any paths resolving outside the configured root directory.
+
+### Provider Abstraction & Registry
+
+- `ProviderRegistry` (`apps/api/src/providers/registry.ts`): Registers and manages providers (`VideoProvider`, `ImageProvider`, `AudioProvider`, `TextProvider`). Sanitizes all provider configuration to strip secrets and API keys before returning data to clients.
+- `MockMediaProvider` (`apps/api/src/providers/mock.ts`): Deterministic mock provider producing valid mock PNG and MP4 headers for local testing without external AI dependencies.
+
+### Database Migrations
+
+- `0001_misty_forgotten_one.sql`: Shot production metadata
+- `0002_dusty_johnny_storm.sql`: Shot-location and shot-prop join tables
+- `0003_flippant_master_chief.sql`: Asset extensions with approved_version_id FK, `asset_versions`, `shot_assets`, `locations.reference_asset_id`, `props.reference_asset_id`, and `ai_jobs` extensions.
+
+Apply migrations with:
+
+```bash
+pnpm --filter @icooro/api db:migrate
+```
 
 ## Current limitations
 
-- No real AI generation, rendering, voice generation, workers, or production queue
-- Authentication and authorization
-- Billing and SaaS/multi-tenancy
-- Binary asset upload and reference-asset management
-- `APP_ENCRYPTION_KEY` is reserved for later phases
+- No real external AI vendor calls (mock provider utilized for deterministic verification)
+- Timeline video editor and server-side FFmpeg rendering pipelines (planned for future phases)
+- Production authentication, authorization, and multi-tenant billing
+- Cloud storage drivers (S3, GCS) planned for cloud production phase

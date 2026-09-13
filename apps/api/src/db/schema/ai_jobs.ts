@@ -1,4 +1,4 @@
-import { index, json, mysqlTable, text, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { index, int, json, mysqlTable, text, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 import { aiProviders } from "./ai_providers.js";
 import { aiModels } from "./ai_models.js";
 import { projects } from "./projects.js";
@@ -7,6 +7,7 @@ import { scenes } from "./scenes.js";
 import { shots } from "./shots.js";
 import { shotVersions } from "./shot_versions.js";
 import { assets } from "./assets.js";
+import { assetVersions } from "./asset_versions.js";
 import { createdAtColumn, idColumn, updatedAtColumn } from "./helpers.js";
 
 export const aiJobs = mysqlTable(
@@ -44,6 +45,17 @@ export const aiJobs = mysqlTable(
     assetId: varchar("asset_id", { length: 36 }).references(() => assets.id, {
       onDelete: "set null",
     }),
+    assetVersionId: varchar("asset_version_id", { length: 36 }).references(
+      (): any => assetVersions.id,
+      { onDelete: "set null" },
+    ),
+    prompt: text("prompt"),
+    negativePrompt: text("negative_prompt"),
+    targetMediaType: varchar("target_media_type", { length: 50 }),
+    requestedDuration: int("requested_duration"),
+    requestedWidth: int("requested_width"),
+    requestedHeight: int("requested_height"),
+    progress: int("progress").notNull().default(0),
     error: text("error"),
     metadata: json("metadata"),
     createdAt: createdAtColumn(),
@@ -61,5 +73,6 @@ export const aiJobs = mysqlTable(
     index("ai_jobs_shot_id_idx").on(table.shotId),
     index("ai_jobs_shot_version_id_idx").on(table.shotVersionId),
     index("ai_jobs_asset_id_idx").on(table.assetId),
+    index("ai_jobs_asset_version_id_idx").on(table.assetVersionId),
   ],
 );

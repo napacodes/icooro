@@ -23,7 +23,17 @@ function readDatabaseUrl(): string {
   return url;
 }
 
+function readStorageDriver(): string {
+  return process.env.STORAGE_DRIVER ?? "local";
+}
+
+function readStorageLocalRoot(): string {
+  return process.env.STORAGE_LOCAL_ROOT ?? "./storage";
+}
+
 export const env = {
   port: readPort(),
   databaseUrl: readDatabaseUrl(),
+  storageDriver: readStorageDriver(),
+  storageLocalRoot: readStorageLocalRoot(),
 };
