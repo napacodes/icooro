@@ -99,3 +99,74 @@ export interface TextProvider extends BaseProvider {
     params: TextGenerationParams,
   ): Promise<{ text: string; metadata?: Record<string, unknown> }>;
 }
+
+export class ProviderError extends Error {
+  readonly provider: string;
+  readonly statusCode?: number;
+  readonly code?: string;
+
+  constructor(
+    message: string,
+    options?: {
+      provider?: string;
+      statusCode?: number;
+      code?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, options?.cause ? { cause: options.cause } : undefined);
+    this.name = "ProviderError";
+    this.provider = options?.provider ?? "unknown";
+    if (options?.statusCode !== undefined) {
+      this.statusCode = options.statusCode;
+    }
+    if (options?.code !== undefined) {
+      this.code = options.code;
+    }
+  }
+}
+
+export class ProviderAuthError extends ProviderError {
+  constructor(
+    message: string,
+    options?: {
+      provider?: string;
+      statusCode?: number;
+      code?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, options);
+    this.name = "ProviderAuthError";
+  }
+}
+
+export class ProviderNetworkError extends ProviderError {
+  constructor(
+    message: string,
+    options?: {
+      provider?: string;
+      statusCode?: number;
+      code?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, options);
+    this.name = "ProviderNetworkError";
+  }
+}
+
+export class ProviderResponseError extends ProviderError {
+  constructor(
+    message: string,
+    options?: {
+      provider?: string;
+      statusCode?: number;
+      code?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, options);
+    this.name = "ProviderResponseError";
+  }
+}
