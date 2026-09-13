@@ -20,8 +20,23 @@ import {
   shotVersionsRoute,
   nestedStorytellingRoute,
 } from "./routes/storytelling.js";
+import {
+  assetsRoute,
+  assetVersionsRoute,
+  nestedAssetsRoute,
+} from "./routes/assets.js";
+import {
+  shotAssetsRoute,
+  nestedShotAssetsRoute,
+} from "./routes/shot_assets.js";
+import {
+  aiModelsRoute,
+  aiProvidersRoute,
+  generationJobsRoute,
+  nestedGenerationJobsRoute,
+} from "./routes/generation.js";
 
-const app = new Hono();
+export const app = new Hono();
 
 app.use(
   "*",
@@ -59,15 +74,27 @@ app.route("/api/v1/shot-characters", shotCharactersRoute);
 app.route("/api/v1/shot-locations", shotLocationsRoute);
 app.route("/api/v1/shot-props", shotPropsRoute);
 app.route("/api/v1/shot-versions", shotVersionsRoute);
+app.route("/api/v1/assets", assetsRoute);
+app.route("/api/v1/asset-versions", assetVersionsRoute);
+app.route("/api/v1/shot-assets", shotAssetsRoute);
+app.route("/api/v1/jobs", generationJobsRoute);
+app.route("/api/v1/ai-providers", aiProvidersRoute);
+app.route("/api/v1/ai-models", aiModelsRoute);
 app.route("/api/v1", nestedStorytellingRoute);
+app.route("/api/v1", nestedAssetsRoute);
+app.route("/api/v1", nestedShotAssetsRoute);
+app.route("/api/v1", nestedGenerationJobsRoute);
 
-serve(
-  {
-    fetch: app.fetch,
-    port: env.port,
-    hostname: "0.0.0.0",
-  },
-  (info) => {
-    console.log(`${APP_SERVICE_API} listening on ${info.address}:${info.port}`);
-  },
-);
+// Only start the HTTP listener if this file is run directly
+if (process.env.NODE_ENV !== "test") {
+  serve(
+    {
+      fetch: app.fetch,
+      port: env.port,
+      hostname: "0.0.0.0",
+    },
+    (info) => {
+      console.log(`${APP_SERVICE_API} listening on ${info.address}:${info.port}`);
+    },
+  );
+}

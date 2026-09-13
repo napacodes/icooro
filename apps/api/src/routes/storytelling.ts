@@ -212,8 +212,8 @@ export const episodesRoute = routeFor({ table: episodes, id: episodes.id, parent
 export const scriptsRoute = routeFor({ table: scripts, id: scripts.id, parent: { input: "episodeId", table: episodes, id: episodes.id, label: "Episode" }, order: [asc(scripts.version), asc(scripts.id)], fields: { episodeId: { column: scripts.episodeId, required: true, kind: "string" }, content: { column: scripts.content, required: true, kind: "string" }, version: { column: scripts.version, required: true, kind: "number" } } });
 const projectEntity = (table: any, id: any, fields: Config["fields"]) => routeFor({ table, id, parent: projectField, order: [asc(id)], fields });
 export const charactersRoute = routeFor({ table: characters, id: characters.id, parent: projectField, order: [asc(characters.id)], validate: projectAssetReferenceValidation, fields: { projectId: { column: characters.projectId, required: true, kind: "string" }, name: { column: characters.name, required: true, max: 255, kind: "string" }, description: { column: characters.description, nullable: true, kind: "string" }, visualDescription: { column: characters.visualDescription, nullable: true, kind: "string" }, referenceAssetId: { column: characters.referenceAssetId, nullable: true, max: 36, kind: "string" } } });
-export const locationsRoute = projectEntity(locations, locations.id, { projectId: { column: locations.projectId, required: true, kind: "string" }, name: { column: locations.name, required: true, max: 255, kind: "string" }, description: { column: locations.description, nullable: true, kind: "string" }, visualDescription: { column: locations.visualDescription, nullable: true, kind: "string" } });
-export const propsRoute = projectEntity(props, props.id, { projectId: { column: props.projectId, required: true, kind: "string" }, name: { column: props.name, required: true, max: 255, kind: "string" }, description: { column: props.description, nullable: true, kind: "string" }, visualDescription: { column: props.visualDescription, nullable: true, kind: "string" } });
+export const locationsRoute = routeFor({ table: locations, id: locations.id, parent: projectField, order: [asc(locations.id)], validate: projectAssetReferenceValidation, fields: { projectId: { column: locations.projectId, required: true, kind: "string" }, name: { column: locations.name, required: true, max: 255, kind: "string" }, description: { column: locations.description, nullable: true, kind: "string" }, visualDescription: { column: locations.visualDescription, nullable: true, kind: "string" }, referenceAssetId: { column: locations.referenceAssetId, nullable: true, max: 36, kind: "string" } } });
+export const propsRoute = routeFor({ table: props, id: props.id, parent: projectField, order: [asc(props.id)], validate: projectAssetReferenceValidation, fields: { projectId: { column: props.projectId, required: true, kind: "string" }, name: { column: props.name, required: true, max: 255, kind: "string" }, description: { column: props.description, nullable: true, kind: "string" }, visualDescription: { column: props.visualDescription, nullable: true, kind: "string" }, referenceAssetId: { column: props.referenceAssetId, nullable: true, max: 36, kind: "string" } } });
 export const scenesRoute = routeFor({ table: scenes, id: scenes.id, parent: { input: "episodeId", table: episodes, id: episodes.id, label: "Episode" }, order: [asc(scenes.orderIndex), asc(scenes.id)], fields: { episodeId: { column: scenes.episodeId, required: true, kind: "string" }, name: { column: scenes.name, required: true, max: 255, kind: "string" }, description: { column: scenes.description, nullable: true, kind: "string" }, orderIndex: { column: scenes.orderIndex, required: true, kind: "number" } } });
 const nullableText = (column: any, max?: number) => max === undefined
   ? { column, nullable: true, kind: "string" as const }
@@ -445,7 +445,7 @@ nestedStorytellingRoute.post("/projects/:projectId/episodes", async (c) => {
 async function createCreativeEntity(c: any, name: "characters" | "locations" | "props", projectId: string, input: Record<string, unknown>) {
   const table = name === "characters" ? characters : name === "locations" ? locations : props;
   const id = name === "characters" ? characters.id : name === "locations" ? locations.id : props.id;
-  const allowedFields = name === "characters" ? ["name", "description", "visualDescription", "referenceAssetId"] : ["name", "description", "visualDescription"];
+  const allowedFields = ["name", "description", "visualDescription", "referenceAssetId"];
   const extra = unknownField(input, allowedFields);
   if (extra) return c.json(bad(`${extra} is not a supported field`), 400);
   if (typeof input.name !== "string" || input.name.trim() === "" || input.name.length > 255) {
@@ -456,7 +456,7 @@ async function createCreativeEntity(c: any, name: "characters" | "locations" | "
       return c.json(bad(`${field} must be a string or null`), 400);
     }
   }
-  if (name === "characters" && "referenceAssetId" in input) {
+  if ("referenceAssetId" in input) {
     if (input.referenceAssetId !== null && typeof input.referenceAssetId !== "string") {
       return c.json(bad("referenceAssetId must be a string or null"), 400);
     }
@@ -468,7 +468,7 @@ async function createCreativeEntity(c: any, name: "characters" | "locations" | "
     const entityValues: Record<string, unknown> = { projectId, name: input.name.trim() };
     if (typeof input.description === "string" || input.description === null) entityValues.description = typeof input.description === "string" ? input.description.trim() : null;
     if (typeof input.visualDescription === "string" || input.visualDescription === null) entityValues.visualDescription = typeof input.visualDescription === "string" ? input.visualDescription.trim() : null;
-    if (name === "characters" && (typeof input.referenceAssetId === "string" || input.referenceAssetId === null)) {
+    if (typeof input.referenceAssetId === "string" || input.referenceAssetId === null) {
       entityValues.referenceAssetId = input.referenceAssetId;
     }
     const [created] = await getDb().insert(table).values(entityValues as any).$returningId();

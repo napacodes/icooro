@@ -20,3 +20,7 @@ export function getDb() {
 
   return db;
 }
+
+export function setDb(customDb: any) {
+  db = customDb;
+}

@@ -10,6 +10,7 @@
     "dev:api": "pnpm --filter @icooro/api dev",
     "dev:web": "pnpm --filter @icooro/web dev",
     "build": "pnpm --filter @icooro/shared build && pnpm --filter @icooro/api build && pnpm --filter @icooro/web build",
-    "typecheck": "pnpm --filter @icooro/shared build && pnpm --filter @icooro/shared typecheck && pnpm --filter @icooro/api typecheck && pnpm --filter @icooro/web typecheck"
+    "typecheck": "pnpm --filter @icooro/shared build && pnpm --filter @icooro/shared typecheck && pnpm --filter @icooro/api typecheck && pnpm --filter @icooro/web typecheck",
+    "test": "pnpm --filter @icooro/api test"
   }
 }
