@@ -4,6 +4,12 @@ import { getDb } from "../db/index.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
 import { aiModels } from "../db/schema/ai_models.js";
 import { generationJobService } from "../services/generation.js";
+import {
+  generationExecutorService,
+  ExecutorJobNotFoundError,
+  ExecutorInvalidStateError,
+  ExecutorConfigError,
+} from "../services/generation_executor.js";
 import { ProviderRegistry } from "../providers/registry.js";
 import {
   createGenerationJobSchema,
@@ -133,7 +139,45 @@ generationJobsRoute.post("/:id/cancel", async (c) => {
   }
 });
 
+generationJobsRoute.post("/:id/submit", async (c) => {
+  const id = c.req.param("id");
+  try {
+    const job = await generationExecutorService.submitJob(id);
+    return c.json({ data: job });
+  } catch (error: unknown) {
+    if (error instanceof ExecutorJobNotFoundError) {
+      return c.json(bad(error.message, 404), 404);
+    }
+    if (error instanceof ExecutorInvalidStateError) {
+      return c.json(bad(error.message, 409), 409);
+    }
+    if (error instanceof ExecutorConfigError) {
+      return c.json(bad(error.message, 400), 400);
+    }
+    console.error("Failed to submit job", error);
+    return c.json(internal(), 500);
+  }
+});
+
+generationJobsRoute.post("/:id/poll", async (c) => {
+  const id = c.req.param("id");
+  try {
+    const job = await generationExecutorService.pollJob(id);
+    return c.json({ data: job });
+  } catch (error: unknown) {
+    if (error instanceof ExecutorJobNotFoundError) {
+      return c.json(bad(error.message, 404), 404);
+    }
+    if (error instanceof ExecutorConfigError) {
+      return c.json(bad(error.message, 400), 400);
+    }
+    console.error("Failed to poll job", error);
+    return c.json(internal(), 500);
+  }
+});
+
 // --- AI Providers and Models Routes ---
+
 
 aiProvidersRoute.get("/", async (c) => {
   try {
