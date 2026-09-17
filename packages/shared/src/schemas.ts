@@ -210,3 +210,37 @@ export type UserRoleInput = z.infer<typeof userRoleSchema>;
 
 export const jobStatusSchema = z.enum(JOB_STATUSES);
 export type JobStatusInput = z.infer<typeof jobStatusSchema>;
+
+// ---------------------------------------------------------------------------
+// Admin schemas
+// ---------------------------------------------------------------------------
+
+export const adminUpdateUserSchema = z
+  .object({
+    role: z.enum(USER_ROLES).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field (role or name) is required for update",
+  });
+export type AdminUpdateUserInput = z.infer<typeof adminUpdateUserSchema>;
+
+export const adminUpdateProviderSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field (name or enabled) is required for update",
+  });
+export type AdminUpdateProviderInput = z.infer<typeof adminUpdateProviderSchema>;
+
+export const adminUpdateModelSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field (name or enabled) is required for update",
+  });
+export type AdminUpdateModelInput = z.infer<typeof adminUpdateModelSchema>;

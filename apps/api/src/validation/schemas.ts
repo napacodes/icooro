@@ -32,6 +32,9 @@ export {
   updateAssetSchema,
   updateProjectSchema,
   userRoleSchema,
+  adminUpdateUserSchema,
+  adminUpdateProviderSchema,
+  adminUpdateModelSchema,
   // input types
   type SignupInput,
   type LoginInput,
@@ -46,6 +49,9 @@ export {
   type CreateAssetVersionInput,
   type AttachShotAssetInput,
   type CreateGenerationJobInput,
+  type AdminUpdateUserInput,
+  type AdminUpdateProviderInput,
+  type AdminUpdateModelInput,
 } from "@icooro/shared";
 
 import type { ZodError } from "zod";

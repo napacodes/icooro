@@ -173,3 +173,60 @@ export interface PublicUser {
   role: UserRole;
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// AI Providers & Models
+// ---------------------------------------------------------------------------
+
+export interface AiProvider {
+  id: string;
+  name: string;
+  providerType: string;
+  enabled: boolean;
+  config?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiModel {
+  id: string;
+  providerId: string;
+  name: string;
+  modelId: string;
+  capability: string;
+  enabled: boolean;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  providerName?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Admin Control Plane types
+// ---------------------------------------------------------------------------
+
+export interface AdminOverviewStats {
+  usersCount: number;
+  adminUsersCount: number;
+  projectsCount: number;
+  providersCount: number;
+  enabledProvidersCount: number;
+  modelsCount: number;
+  enabledModelsCount: number;
+  jobsCount: number;
+  jobsByStatus: Record<JobStatus, number>;
+}
+
+export interface AdminUser extends PublicUser {
+  updatedAt?: string;
+}
+
+export interface AdminProject extends Project {
+  ownerEmail?: string | null;
+  ownerName?: string | null;
+}
+
+export interface AdminJob extends GenerationJob {
+  projectName?: string | null;
+  providerName?: string | null;
+}
