@@ -35,6 +35,9 @@ import {
   generationJobsRoute,
   nestedGenerationJobsRoute,
 } from "./routes/generation.js";
+import { authRoute } from "./routes/auth.js";
+import { adminRoute } from "./routes/admin.js";
+import { sessionMiddleware, requireUser } from "./middleware/session.js";
 
 export const app = new Hono();
 
@@ -42,6 +45,7 @@ app.use(
   "*",
   cors({
     origin: ["http://localhost:3000"],
+    credentials: true,
   }),
 );
 
@@ -60,6 +64,50 @@ app.get("/api/v1/health/db", async (c) => {
   } catch {
     return c.json({ ok: false }, 503);
   }
+});
+
+// Session resolution is global so every downstream handler can read
+// `c.get("userId")`. Routes opt into authentication via `requireUser()`.
+app.use("/api/v1/*", sessionMiddleware);
+
+// Public (auth-related) routes.
+app.route("/api/v1/auth", authRoute);
+
+// Admin control plane — admin-only.
+app.route("/api/v1/admin", adminRoute);
+
+// All other /api/v1 routes require an authenticated user.
+app.use(
+  "/api/v1/projects",
+  requireUser(),
+);
+app.use(
+  "/api/v1/projects/*",
+  requireUser(),
+);
+
+// All application routes require an authenticated user.
+const requireUserApp = requireUser();
+[
+  episodesRoute,
+  scriptsRoute,
+  charactersRoute,
+  locationsRoute,
+  propsRoute,
+  scenesRoute,
+  shotsRoute,
+  shotCharactersRoute,
+  shotLocationsRoute,
+  shotPropsRoute,
+  shotVersionsRoute,
+  assetsRoute,
+  assetVersionsRoute,
+  shotAssetsRoute,
+  generationJobsRoute,
+  aiModelsRoute,
+  aiProvidersRoute,
+].forEach((route) => {
+  route.use("*", requireUserApp);
 });
 
 app.route("/api/v1/projects", projectsRoute);
@@ -86,7 +134,7 @@ app.route("/api/v1", nestedShotAssetsRoute);
 app.route("/api/v1", nestedGenerationJobsRoute);
 
 // Only start the HTTP listener if this file is run directly
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !process.env.ICOORO_API_DISABLE_LISTENER) {
   serve(
     {
       fetch: app.fetch,

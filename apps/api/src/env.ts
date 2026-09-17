@@ -31,9 +31,19 @@ function readStorageLocalRoot(): string {
   return process.env.STORAGE_LOCAL_ROOT ?? "./storage";
 }
 
+function readChatFireBaseUrl(): string {
+  return process.env.CHATFIRE_BASE_URL ?? "https://api.chatfire.site";
+}
+
+function readChatFireApiKey(): string {
+  return process.env.CHATFIRE_API_KEY ?? "";
+}
+
 export const env = {
   port: readPort(),
   databaseUrl: readDatabaseUrl(),
   storageDriver: readStorageDriver(),
   storageLocalRoot: readStorageLocalRoot(),
+  chatfireBaseUrl: readChatFireBaseUrl(),
+  chatfireApiKey: readChatFireApiKey(),
 };

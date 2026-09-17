@@ -4,6 +4,22 @@ import { getDb } from "../db/index.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
 import { aiModels } from "../db/schema/ai_models.js";
 import { generationJobService } from "../services/generation.js";
+import {
+  generationExecutorService,
+  ExecutorJobNotFoundError,
+  ExecutorInvalidStateError,
+  ExecutorConfigError,
+} from "../services/generation_executor.js";
+import {
+  generationResultService,
+  ResultJobNotFoundError,
+  ResultOwnershipError,
+  ResultInvalidStateError,
+  ResultConfigError,
+  ResultAlreadyPersistedError,
+  ResultDownloadError,
+  ResultStorageError,
+} from "../services/generation_result.js";
 import { ProviderRegistry } from "../providers/registry.js";
 import {
   createGenerationJobSchema,
@@ -102,6 +118,39 @@ nestedGenerationJobsRoute.post("/projects/:projectId/jobs", async (c) => {
   }
 });
 
+nestedGenerationJobsRoute.post("/projects/:projectId/jobs/:id/persist-result", async (c) => {
+  const projectId = c.req.param("projectId");
+  const id = c.req.param("id");
+  try {
+    const version = await generationResultService.persistResult(id, projectId);
+    return c.json({ data: version }, 201);
+  } catch (error: unknown) {
+    if (error instanceof ResultJobNotFoundError) {
+      return c.json(bad(error.message, 404), 404);
+    }
+    if (error instanceof ResultOwnershipError) {
+      return c.json(bad(error.message, 404), 404); // 404 not 403: don't reveal existence
+    }
+    if (error instanceof ResultInvalidStateError) {
+      return c.json(bad(error.message, 409), 409);
+    }
+    if (error instanceof ResultAlreadyPersistedError) {
+      return c.json(bad(error.message, 409), 409);
+    }
+    if (error instanceof ResultConfigError) {
+      return c.json(bad(error.message, 400), 400);
+    }
+    if (error instanceof ResultDownloadError) {
+      return c.json(bad(error.message, 500), 500);
+    }
+    if (error instanceof ResultStorageError) {
+      return c.json(bad(error.message, 500), 500);
+    }
+    console.error("Failed to persist generation result", error);
+    return c.json(internal(), 500);
+  }
+});
+
 generationJobsRoute.get("/:id", async (c) => {
   const id = c.req.param("id");
   try {
@@ -133,7 +182,45 @@ generationJobsRoute.post("/:id/cancel", async (c) => {
   }
 });
 
+generationJobsRoute.post("/:id/submit", async (c) => {
+  const id = c.req.param("id");
+  try {
+    const job = await generationExecutorService.submitJob(id);
+    return c.json({ data: job });
+  } catch (error: unknown) {
+    if (error instanceof ExecutorJobNotFoundError) {
+      return c.json(bad(error.message, 404), 404);
+    }
+    if (error instanceof ExecutorInvalidStateError) {
+      return c.json(bad(error.message, 409), 409);
+    }
+    if (error instanceof ExecutorConfigError) {
+      return c.json(bad(error.message, 400), 400);
+    }
+    console.error("Failed to submit job", error);
+    return c.json(internal(), 500);
+  }
+});
+
+generationJobsRoute.post("/:id/poll", async (c) => {
+  const id = c.req.param("id");
+  try {
+    const job = await generationExecutorService.pollJob(id);
+    return c.json({ data: job });
+  } catch (error: unknown) {
+    if (error instanceof ExecutorJobNotFoundError) {
+      return c.json(bad(error.message, 404), 404);
+    }
+    if (error instanceof ExecutorConfigError) {
+      return c.json(bad(error.message, 400), 400);
+    }
+    console.error("Failed to poll job", error);
+    return c.json(internal(), 500);
+  }
+});
+
 // --- AI Providers and Models Routes ---
+
 
 aiProvidersRoute.get("/", async (c) => {
   try {

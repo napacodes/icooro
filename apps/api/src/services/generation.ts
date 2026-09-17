@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { aiJobs } from "../db/schema/ai_jobs.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
@@ -11,6 +11,23 @@ import { assets } from "../db/schema/assets.js";
 import { assetVersions } from "../db/schema/asset_versions.js";
 import type { GenerationJobStatus } from "../providers/types.js";
 import { providerRegistry } from "../providers/registry.js";
+
+/**
+ * Thrown by `completeJobWithAssetVersion` when a concurrent caller has
+ * already linked an AssetVersion to this job. The conditional
+ * `WHERE asset_version_id IS NULL` update returned `affectedRows = 0`.
+ *
+ * This is an internal service-layer error. `generation_result.ts`
+ * translates it into the public `ResultAlreadyPersistedError`.
+ */
+export class JobAlreadyLinkedError extends Error {
+  readonly jobId: string;
+  constructor(jobId: string) {
+    super(`Job "${jobId}" already has an assetVersionId linked`);
+    this.name = "JobAlreadyLinkedError";
+    this.jobId = jobId;
+  }
+}
 
 const VALID_TRANSITIONS: Record<GenerationJobStatus, GenerationJobStatus[]> = {
   queued: ["submitted", "failed", "cancelled"],
@@ -252,6 +269,36 @@ export class GenerationJobService {
     });
   }
 
+  /**
+   * Atomically creates an AssetVersion and links it to the given job.
+   *
+   * Concurrency guarantee (C5.3 hardening):
+   *   The whole sequence runs inside a single MySQL transaction whose
+   *   first DB action is a row-locking read of the target `ai_jobs`
+   *   row (`SELECT ... FOR UPDATE`, gated on `asset_version_id IS
+   *   NULL`). On MySQL/InnoDB, `FOR UPDATE` takes an exclusive row
+   *   lock; the second concurrent caller for the same `jobId` blocks
+   *   on that read until the first transaction commits, then resumes
+   *   and observes `asset_version_id` is no longer NULL — so its
+   *   locking SELECT returns zero rows and it throws
+   *   `JobAlreadyLinkedError` BEFORE doing any `asset_versions`
+   *   read or insert. Therefore two concurrent callers can never
+   *   both compute the same `nextVersion` and both reach the
+   *   `asset_versions` insert, which is what makes the
+   *   `UNIQUE(asset_id, version)` index a pure safety net rather
+   *   than a primary guard.
+   *
+   *   The conditional `WHERE asset_version_id IS NULL` on the final
+   *   UPDATE remains as a defensive check; under normal operation
+   *   it cannot fail because the row lock is already held, but it
+   *   preserves the existing `affectedRows = 0` error path for any
+   *   future caller that bypasses the locking read.
+   *
+   * NOT a guarantee of full storage+DB atomicity: the storage write
+   * (see `generation_result.ts`) happens outside this transaction.
+   * The caller is responsible for compensating storage cleanup if
+   * this method throws.
+   */
   async completeJobWithAssetVersion(
     jobId: string,
     assetId: string,
@@ -275,45 +322,84 @@ export class GenerationJobService {
     const [asset] = await db.select().from(assets).where(eq(assets.id, assetId));
     if (!asset) throw new Error("Asset not found");
 
-    // Deterministic version numbering: max(version) + 1
-    const versions = await db
-      .select({ version: assetVersions.version })
-      .from(assetVersions)
-      .where(eq(assetVersions.assetId, assetId));
-    const nextVersion =
-      versions.length > 0
-        ? Math.max(...versions.map((v) => v.version)) + 1
-        : 1;
+    return await db.transaction(async (tx) => {
+      // 1. Lock the target ai_jobs row for the duration of this
+      //    transaction. The `WHERE asset_version_id IS NULL` predicate
+      //    is part of the locking SELECT, so a job that has already
+      //    been linked by a concurrent (now-committed) transaction
+      //    returns zero rows here — we reject with
+      //    JobAlreadyLinkedError before touching asset_versions.
+      //    On MySQL/InnoDB, `.for('update')` emits `FOR UPDATE` and
+      //    takes an exclusive row lock, serializing concurrent
+      //    callers for the same jobId.
+      const lockRows = await tx
+        .select({ id: aiJobs.id })
+        .from(aiJobs)
+        .where(and(eq(aiJobs.id, jobId), isNull(aiJobs.assetVersionId)))
+        .for("update");
+      if (lockRows.length === 0) {
+        throw new JobAlreadyLinkedError(jobId);
+      }
 
-    const [createdVersion] = await db
-      .insert(assetVersions)
-      .values({
-        assetId,
-        version: nextVersion,
-        status: "ready",
-        sourceKind: "generated",
-        storageKey: versionData.storageKey,
-        mimeType: versionData.mimeType ?? null,
-        fileExtension: versionData.fileExtension ?? null,
-        fileSize: versionData.fileSize ?? null,
-        checksum: versionData.checksum ?? null,
-        width: versionData.width ?? null,
-        height: versionData.height ?? null,
-        duration: versionData.duration ?? null,
-        prompt: versionData.prompt ?? job.prompt ?? null,
-        jobId: job.id,
-        metadata: versionData.metadata ?? null,
-      })
-      .$returningId();
+      // 2. Read existing AssetVersions and compute nextVersion. Safe to
+      //    do now: we hold the ai_jobs row lock, so no concurrent
+      //    caller for the same job can reach this point.
+      const versions = await tx
+        .select({ version: assetVersions.version })
+        .from(assetVersions)
+        .where(eq(assetVersions.assetId, assetId));
+      const nextVersion =
+        versions.length > 0
+          ? Math.max(...versions.map((v) => v.version)) + 1
+          : 1;
 
-    if (!createdVersion) {
-      throw new Error("Failed to insert asset version for completed job");
-    }
+      // 3. INSERT the AssetVersion.
+      const [createdVersion] = await tx
+        .insert(assetVersions)
+        .values({
+          assetId,
+          version: nextVersion,
+          status: "ready",
+          sourceKind: "generated",
+          storageKey: versionData.storageKey,
+          mimeType: versionData.mimeType ?? null,
+          fileExtension: versionData.fileExtension ?? null,
+          fileSize: versionData.fileSize ?? null,
+          checksum: versionData.checksum ?? null,
+          width: versionData.width ?? null,
+          height: versionData.height ?? null,
+          duration: versionData.duration ?? null,
+          prompt: versionData.prompt ?? job.prompt ?? null,
+          jobId: job.id,
+          metadata: versionData.metadata ?? null,
+        })
+        .$returningId();
 
-    // Update job to completed referencing the new version
-    return await this.updateJobStatus(jobId, "completed", {
-      progress: 100,
-      assetVersionId: createdVersion.id,
+      if (!createdVersion) {
+        throw new Error("Failed to insert asset version for completed job");
+      }
+
+      // 4. Link the AssetVersion to the job. The `assetVersionId IS
+      //    NULL` predicate is defensive: under the row lock it cannot
+      //    fail, but if a future refactor removes the locking read
+      //    this still drives the existing `affectedRows = 0` error
+      //    path.
+      const updateResult = await tx
+        .update(aiJobs)
+        .set({
+          status: "completed",
+          progress: 100,
+          assetVersionId: createdVersion.id,
+        })
+        .where(and(eq(aiJobs.id, jobId), isNull(aiJobs.assetVersionId)));
+
+      const affected = (updateResult as unknown as { affectedRows?: number })
+        .affectedRows;
+      if (affected === 0) {
+        throw new JobAlreadyLinkedError(jobId);
+      }
+
+      return createdVersion;
     });
   }
 }

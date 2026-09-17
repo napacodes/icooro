@@ -1,273 +1,110 @@
 <script setup lang="ts">
 import { APP_NAME } from "@icooro/shared";
 
-type Project = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type ProjectResponse = { data: Project };
-type ProjectListResponse = { data: Project[] };
-
-const config = useRuntimeConfig();
-const projects = ref<Project[]>([]);
-const loading = ref(true);
-const submitting = ref(false);
-const error = ref("");
-const formError = ref("");
-const form = reactive({ name: "", description: "", status: "draft" });
-
-function messageFromError(value: unknown, fallback: string) {
-  if (value && typeof value === "object" && "data" in value) {
-    const data = value.data;
-    if (
-      data &&
-      typeof data === "object" &&
-      "error" in data &&
-      data.error &&
-      typeof data.error === "object" &&
-      "message" in data.error &&
-      typeof data.error.message === "string"
-    ) {
-      return data.error.message;
-    }
-  }
-  return fallback;
-}
-
-async function loadProjects() {
-  loading.value = true;
-  error.value = "";
-  try {
-    const response = await $fetch<ProjectListResponse>(
-      `${config.public.apiBase}/api/v1/projects`,
-    );
-    projects.value = response.data;
-  } catch (cause) {
-    error.value = messageFromError(cause, "Unable to load projects.");
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function createProject() {
-  submitting.value = true;
-  formError.value = "";
-  try {
-    const response = await $fetch<ProjectResponse>(
-      `${config.public.apiBase}/api/v1/projects`,
-      {
-        method: "POST",
-        body: {
-          name: form.name,
-          description: form.description || null,
-          status: form.status,
-        },
-      },
-    );
-    projects.value = [response.data, ...projects.value];
-    form.name = "";
-    form.description = "";
-    form.status = "draft";
-  } catch (cause) {
-    formError.value = messageFromError(cause, "Unable to create project.");
-  } finally {
-    submitting.value = false;
-  }
-}
-
-onMounted(loadProjects);
+definePageMeta({ layout: "default" });
 </script>
 
 <template>
   <main class="page">
-    <header class="header">
-      <div>
-        <p class="eyebrow">{{ APP_NAME }}</p>
-        <h1>Projects</h1>
-        <p class="muted">Your storytelling workspaces.</p>
+    <section class="hero">
+      <p class="eyebrow">{{ APP_NAME }}</p>
+      <h1>AI-native video production, end to end.</h1>
+      <p class="lede">
+        Plan stories, build episodes, and generate media with a single workspace.
+      </p>
+      <div class="actions">
+        <NuxtLink to="/app" class="cta">Open the app</NuxtLink>
+        <NuxtLink to="/signup" class="secondary">Create an account</NuxtLink>
       </div>
-    </header>
-
-    <section class="panel">
-      <h2>New project</h2>
-      <form class="form" @submit.prevent="createProject">
-        <label>
-          Name
-          <input v-model="form.name" required maxlength="255" placeholder="Project name" />
-        </label>
-        <label>
-          Description
-          <textarea v-model="form.description" rows="3" placeholder="Optional description" />
-        </label>
-        <label>
-          Status
-          <input v-model="form.status" required maxlength="50" />
-        </label>
-        <p v-if="formError" class="error" role="alert">{{ formError }}</p>
-        <button type="submit" :disabled="submitting">
-          {{ submitting ? "Creating…" : "Create project" }}
-        </button>
-      </form>
     </section>
-
-    <section aria-labelledby="projects-heading">
-      <h2 id="projects-heading">Your projects</h2>
-      <p v-if="loading" class="muted" role="status">Loading projects…</p>
-      <p v-else-if="error" class="error" role="alert">{{ error }}</p>
-      <div v-else-if="projects.length === 0" class="empty">
-        <p>No projects yet.</p>
-        <p class="muted">Create your first project to begin planning a story.</p>
-      </div>
-      <div v-else class="project-list">
-        <article v-for="project in projects" :key="project.id" class="project-card">
-          <div>
-            <h3>{{ project.name }}</h3>
-            <p v-if="project.description" class="muted">{{ project.description }}</p>
-          </div>
-          <span class="status">{{ project.status }}</span>
-          <NuxtLink class="button secondary" :to="`/projects/${project.id}`">Open workspace</NuxtLink>
-        </article>
-      </div>
+    <section class="features">
+      <article>
+        <h2>Story</h2>
+        <p>Episodes, scripts, scenes, and shots — planned together.</p>
+      </article>
+      <article>
+        <h2>Media</h2>
+        <p>Generate, version, and approve assets in one place.</p>
+      </article>
+      <article>
+        <h2>Generations</h2>
+        <p>Submit, poll, and persist provider results with a single click.</p>
+      </article>
     </section>
   </main>
 </template>
 
 <style scoped>
 .page {
-  min-height: 100vh;
-  box-sizing: border-box;
-  max-width: 980px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 3rem 1.25rem;
-  font-family: system-ui, sans-serif;
+  padding: 4rem 1.5rem 6rem;
   color: #17212b;
+  font-family: system-ui, sans-serif;
 }
-
-.header {
-  margin-bottom: 2rem;
+.hero {
+  text-align: center;
+  margin-bottom: 4rem;
 }
-
-.eyebrow, h1, h2, h3, p {
-  margin: 0;
-}
-
 .eyebrow {
   color: #4c6fff;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  margin: 0 0 1rem;
 }
-
 h1 {
-  margin-top: 0.35rem;
-  font-size: 2.5rem;
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  margin: 0 0 1rem;
 }
-
-h2 {
-  margin-bottom: 1rem;
-  font-size: 1.25rem;
+.lede {
+  color: #52606d;
+  font-size: 1.1rem;
+  margin: 0 0 2rem;
 }
-
-.muted {
-  color: #637181;
-}
-
-.panel, .empty, .project-card {
-  border: 1px solid #dbe2ea;
-  border-radius: 0.75rem;
-  background: #fff;
-}
-
-.panel {
-  margin-bottom: 2.5rem;
-  padding: 1.25rem;
-}
-
-.form {
-  display: grid;
-  gap: 1rem;
-  max-width: 640px;
-}
-
-label {
-  display: grid;
-  gap: 0.4rem;
-  font-weight: 600;
-}
-
-input, textarea {
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid #b7c2cc;
-  border-radius: 0.4rem;
-  padding: 0.65rem;
-  font: inherit;
-}
-
-button, .button {
-  display: inline-block;
-  width: fit-content;
-  border: 0;
-  border-radius: 0.4rem;
-  padding: 0.65rem 0.9rem;
-  background: #304fd8;
-  color: #fff;
-  font: inherit;
-  font-weight: 650;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.secondary {
-  background: #eef1ff;
-  color: #243da8;
-}
-
-.error {
-  color: #b42318;
-}
-
-.empty {
-  padding: 2rem;
-}
-
-.project-list {
-  display: grid;
+.actions {
+  display: inline-flex;
   gap: 0.75rem;
 }
-
-.project-card {
+.cta {
+  display: inline-block;
+  background: #304fd8;
+  color: #fff;
+  padding: 0.75rem 1.1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 700;
+}
+.secondary {
+  display: inline-block;
+  background: #eef1ff;
+  color: #243da8;
+  padding: 0.75rem 1.1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 700;
+}
+.features {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
 }
-
-.project-card h3 {
-  margin-bottom: 0.35rem;
+.features article {
+  background: #fff;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  padding: 1.5rem;
 }
-
-.status {
-  border-radius: 999px;
-  background: #eef1f5;
-  padding: 0.3rem 0.6rem;
+.features h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+.features p {
   color: #52606d;
-  font-size: 0.85rem;
+  margin: 0;
 }
-
-@media (max-width: 680px) {
-  .project-card {
+@media (max-width: 760px) {
+  .features {
     grid-template-columns: 1fr;
   }
 }

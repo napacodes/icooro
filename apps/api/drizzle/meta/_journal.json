@@ -29,6 +29,13 @@
       "when": 1789302949464,
       "tag": "0003_flippant_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1789639972433,
+      "tag": "0004_wise_warbound",
+      "breakpoints": true
     }
   ]
 }
