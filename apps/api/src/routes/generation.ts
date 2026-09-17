@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
+import { projects } from "../db/schema/projects.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
 import { aiModels } from "../db/schema/ai_models.js";
 import { generationJobService } from "../services/generation.js";
@@ -72,6 +73,17 @@ export const aiModelsRoute = new Hono();
 nestedGenerationJobsRoute.get("/projects/:projectId/jobs", async (c) => {
   const projectId = c.req.param("projectId");
   try {
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb()
+      .select({ id: projects.id, ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+
     const jobs = await generationJobService.listProjectJobs(projectId);
     return c.json({ data: jobs });
   } catch (error) {
@@ -93,6 +105,17 @@ nestedGenerationJobsRoute.post("/projects/:projectId/jobs", async (c) => {
   }
 
   try {
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb()
+      .select({ id: projects.id, ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+
     const created = await generationJobService.createJob({
       projectId,
       ...parsed.data,
@@ -122,6 +145,17 @@ nestedGenerationJobsRoute.post("/projects/:projectId/jobs/:id/persist-result", a
   const projectId = c.req.param("projectId");
   const id = c.req.param("id");
   try {
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb()
+      .select({ id: projects.id, ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+
     const version = await generationResultService.persistResult(id, projectId);
     return c.json({ data: version }, 201);
   } catch (error: unknown) {

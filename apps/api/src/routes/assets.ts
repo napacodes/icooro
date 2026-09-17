@@ -1,4 +1,7 @@
 import { Hono } from "hono";
+import { eq } from "drizzle-orm";
+import { getDb } from "../db/index.js";
+import { projects } from "../db/schema/projects.js";
 import { assetService } from "../services/assets.js";
 import {
   createAssetSchema,
@@ -66,6 +69,17 @@ nestedAssetsRoute.get("/projects/:projectId/assets", async (c) => {
   const shotId = c.req.query("shotId");
 
   try {
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb()
+      .select({ id: projects.id, ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+
     const list = await assetService.listProjectAssets(projectId, {
       type,
       status,
@@ -92,6 +106,17 @@ nestedAssetsRoute.post("/projects/:projectId/assets", async (c) => {
   }
 
   try {
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb()
+      .select({ id: projects.id, ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+
     const created = await assetService.createAsset(projectId, parsed.data);
     return c.json({ data: created }, 201);
   } catch (error: any) {
@@ -116,6 +141,17 @@ nestedAssetsRoute.get("/projects/:projectId/assets/:assetId", async (c) => {
   const assetId = c.req.param("assetId");
 
   try {
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb()
+      .select({ id: projects.id, ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+
     const asset = await assetService.getProjectAsset(projectId, assetId);
     if (!asset) {
       return c.json(bad("Asset not found", 404), 404);
