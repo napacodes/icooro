@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "zod": "^4.6.4"
   }
 }

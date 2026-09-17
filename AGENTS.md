@@ -1,4 +1,4 @@
-\# Icooro â€” Agent Engineering Protocol
+\# Icooro — Agent Engineering Protocol
 
 
 
@@ -18,30 +18,28 @@ Completed phases:
 
 
 
-\- C1 â€” Projects Foundation
+\- C1 — Projects Foundation
 
-\- C2 â€” Storytelling Foundation
+\- C2 — Storytelling Foundation
 
-\- C3 â€” Creative Production Foundation
+\- C3 — Creative Production Foundation
 
-\- C4 â€” Media / Asset Foundation
-
-
-
-Current phase:
+\- C4 — Media / Asset Foundation
+\- C5 — Real AI Generation
 
 
 
-\- C5 â€” Real AI Generation
+Stable C5 baseline:
 
 
 
-Stable C4 baseline:
+\- Main merge commit: `dd56e44`
 
 
+
+Historical C4 baseline:
 
 \- Main merge commit: `c35ceed`
-
 \- C4 implementation commit: `b824945`
 
 

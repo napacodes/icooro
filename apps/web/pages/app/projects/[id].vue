@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ layout: "app" });
+
 type Project = { id: string; name: string; description: string | null; status: string };
 type Episode = { id: string; title: string; episodeNumber: number; status: string };
 type Script = { id: string; content: string; version: number };
@@ -143,7 +145,7 @@ async function saveProject() {
 }
 async function deleteProject() {
   if (!window.confirm("Delete this project and its production data? This cannot be undone.")) return;
-  try { await request(`/projects/${route.params.id}`, { method: "DELETE" }); await router.push("/"); } catch (cause) { formError.value = messageFromError(cause, "Unable to delete project."); }
+  try { await request(`/projects/${route.params.id}`, { method: "DELETE" }); await router.push("/app/projects"); } catch (cause) { formError.value = messageFromError(cause, "Unable to delete project."); }
 }
 function fillScript(script: Script) { Object.assign(scriptForm, { content: script.content, version: script.version }); editing.script = script.id; }
 async function saveScript() {
@@ -188,7 +190,7 @@ onMounted(loadProject);
 
 <template>
   <main class="page">
-    <NuxtLink to="/" class="back">← Projects</NuxtLink>
+      <NuxtLink to="/app/projects" class="back">← Projects</NuxtLink>
     <p v-if="loading" class="muted" role="status">Loading production workspace…</p>
     <p v-else-if="error" class="error" role="alert">{{ error }}</p>
     <template v-else-if="project">
