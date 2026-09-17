@@ -18,12 +18,36 @@
         <NuxtLink to="/app/projects">Projects</NuxtLink>
         <NuxtLink to="/app/projects/new">Create project</NuxtLink>
         <span class="section-label">Production</span>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Story</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Episodes</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Scenes</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Shots</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Assets</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Generations</NuxtLink>
+        <NuxtLink
+          :to="activeProjectId ? `/app/projects/${activeProjectId}/story` : '/app/projects'"
+          :aria-disabled="!activeProjectId"
+          :class="{ placeholder: !activeProjectId }"
+        >Story</NuxtLink>
+        <NuxtLink
+          :to="activeProjectId ? `/app/projects/${activeProjectId}/episodes` : '/app/projects'"
+          :aria-disabled="!activeProjectId"
+          :class="{ placeholder: !activeProjectId }"
+        >Episodes</NuxtLink>
+        <NuxtLink
+          :to="activeProjectId ? `/app/projects/${activeProjectId}/scenes` : '/app/projects'"
+          :aria-disabled="!activeProjectId"
+          :class="{ placeholder: !activeProjectId }"
+        >Scenes</NuxtLink>
+        <NuxtLink
+          :to="activeProjectId ? `/app/projects/${activeProjectId}/shots` : '/app/projects'"
+          :aria-disabled="!activeProjectId"
+          :class="{ placeholder: !activeProjectId }"
+        >Shots</NuxtLink>
+        <NuxtLink
+          :to="activeProjectId ? `/app/projects/${activeProjectId}/assets` : '/app/projects'"
+          :aria-disabled="!activeProjectId"
+          :class="{ placeholder: !activeProjectId }"
+        >Assets</NuxtLink>
+        <NuxtLink
+          :to="activeProjectId ? `/app/projects/${activeProjectId}/generations` : '/app/projects'"
+          :aria-disabled="!activeProjectId"
+          :class="{ placeholder: !activeProjectId }"
+        >Generations</NuxtLink>
         <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Timeline</NuxtLink>
         <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Export</NuxtLink>
         <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Settings</NuxtLink>
@@ -36,8 +60,20 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { APP_NAME } from "@icooro/shared";
+
 const auth = useAuth();
+const route = useRoute();
+
+const activeProjectId = computed(() => {
+  const match = route.path.match(/^\/app\/projects\/([^\/]+)/);
+  if (match && match[1] !== "new") {
+    return match[1];
+  }
+  return null;
+});
+
 async function onLogout() {
   await auth.logout();
   await navigateTo("/login");

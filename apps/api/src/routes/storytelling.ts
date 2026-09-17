@@ -405,8 +405,13 @@ registerNestedShotAsset("props", shotProps, props, props.id, "propId", "Prop", p
 
 nestedStorytellingRoute.get("/projects/:projectId/episodes", async (c) => {
   try {
-    const [project] = await getDb().select({ id: projects.id }).from(projects).where(eq(projects.id, c.req.param("projectId")));
-    return project ? nestedList(c, episodes, episodes.projectId, project.id, [asc(episodes.episodeNumber), asc(episodes.id)]) : c.json(bad("Project not found", 404), 404);
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb().select({ id: projects.id, ownerId: projects.ownerId }).from(projects).where(eq(projects.id, c.req.param("projectId")));
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
+    return nestedList(c, episodes, episodes.projectId, project.id, [asc(episodes.episodeNumber), asc(episodes.id)]);
   } catch (error) {
     console.error(error);
     return c.json(internal(), 500);
@@ -418,8 +423,12 @@ nestedStorytellingRoute.post("/projects/:projectId/episodes", async (c) => {
   const extra = unknownField(input, ["title", "episodeNumber", "status"]);
   if (extra) return c.json(bad(`${extra} is not a supported field`), 400);
   try {
-    const [project] = await getDb().select({ id: projects.id }).from(projects).where(eq(projects.id, c.req.param("projectId")));
-    if (!project) return c.json(bad("Project not found", 404), 404);
+    const userId = c.get("userId") as string | undefined;
+    const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+    const [project] = await getDb().select({ id: projects.id, ownerId: projects.ownerId }).from(projects).where(eq(projects.id, c.req.param("projectId")));
+    if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+      return c.json(bad("Project not found", 404), 404);
+    }
     if (typeof input.title !== "string" || input.title.trim() === "" || input.title.length > 255 ||
       typeof input.episodeNumber !== "number" || !Number.isInteger(input.episodeNumber) || input.episodeNumber <= 0) {
       return c.json(bad("title must be a non-empty string of 255 characters or fewer and episodeNumber must be a positive integer"), 400);
@@ -489,8 +498,13 @@ for (const [name, table, projectColumn, order] of [
 ] as const) {
   nestedStorytellingRoute.get(`/projects/:projectId/${name}`, async (c) => {
     try {
-      const [project] = await getDb().select({ id: projects.id }).from(projects).where(eq(projects.id, c.req.param("projectId")));
-      return project ? nestedList(c, table, projectColumn, project.id, order) : c.json(bad("Project not found", 404), 404);
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb().select({ id: projects.id, ownerId: projects.ownerId }).from(projects).where(eq(projects.id, c.req.param("projectId")));
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+      return nestedList(c, table, projectColumn, project.id, order);
     } catch (error) {
       console.error(error);
       return c.json(internal(), 500);
@@ -500,8 +514,12 @@ for (const [name, table, projectColumn, order] of [
     const input = await body(c);
     if (!input) return c.json(bad("Request body must be a JSON object"), 400);
     try {
-      const [project] = await getDb().select({ id: projects.id }).from(projects).where(eq(projects.id, c.req.param("projectId")));
-      if (!project) return c.json(bad("Project not found", 404), 404);
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb().select({ id: projects.id, ownerId: projects.ownerId }).from(projects).where(eq(projects.id, c.req.param("projectId")));
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
       return createCreativeEntity(c, name, project.id, input);
     } catch (error) {
       console.error(error);
