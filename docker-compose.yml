@@ -23,7 +23,12 @@ services:
       dockerfile: apps/api/Dockerfile
     environment:
       API_PORT: ${API_PORT:-3001}
-      DATABASE_URL: ${DATABASE_URL:-}
+      # Inside a container, `localhost` is the api container itself, not
+      # the mysql service, so the connection URL must use the compose
+      # service hostname `mysql`. The mysql service always listens on
+      # 3306 within the compose network; credentials/database come from
+      # the same MYSQL_* variables that provision the mysql service.
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
     ports:
       - "${API_PORT:-3001}:3001"
