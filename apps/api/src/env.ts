@@ -39,6 +39,27 @@ function readChatFireApiKey(): string {
   return process.env.CHATFIRE_API_KEY ?? "";
 }
 
+/**
+ * Browser origins allowed to call the API with credentials.
+ *
+ * Comma-separated, e.g. `http://localhost:3000,http://192.168.1.49:3000`.
+ * When unset, only the local development origin is allowed. Origins are
+ * echoed per-request, never wildcarded, so `credentials: true` stays valid.
+ */
+const DEFAULT_CORS_ORIGIN = "http://localhost:3000";
+
+export function parseCorsOrigins(
+  raw: string | undefined,
+  fallback = DEFAULT_CORS_ORIGIN,
+): string[] {
+  if (!raw || raw.trim() === "") return [fallback];
+  const origins = raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== "");
+  return origins.length > 0 ? origins : [fallback];
+}
+
 export const env = {
   port: readPort(),
   databaseUrl: readDatabaseUrl(),
@@ -46,4 +67,5 @@ export const env = {
   storageLocalRoot: readStorageLocalRoot(),
   chatfireBaseUrl: readChatFireBaseUrl(),
   chatfireApiKey: readChatFireApiKey(),
+  corsOrigins: parseCorsOrigins(process.env.API_CORS_ORIGINS),
 };
