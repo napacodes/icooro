@@ -19,7 +19,12 @@ async function onSubmit() {
   submitting.value = true;
   errorMessage.value = "";
   try {
-    await auth.login({ email: form.email, password: form.password });
+    // Plain object (not the reactive form) so the JSON body is exactly
+    // LoginInput: { email, password }.
+    await auth.login({
+      email: form.email,
+      password: form.password,
+    });
     await navigateTo(redirectTarget.value);
   } catch (err: unknown) {
     const apiErr = err as ApiError | null;

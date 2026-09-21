@@ -41,10 +41,13 @@ import { sessionMiddleware, requireUser } from "./middleware/session.js";
 
 export const app = new Hono();
 
+// Browser origins that may call the API with credentials. Driven by
+// `API_CORS_ORIGINS` (comma-separated); defaults to the local dev origin.
+// Origins are echoed per-request, never wildcarded, so credentials stay valid.
 app.use(
   "*",
   cors({
-    origin: ["http://localhost:3000"],
+    origin: env.corsOrigins,
     credentials: true,
   }),
 );

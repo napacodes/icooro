@@ -154,6 +154,34 @@ describe("User Dashboard (/app)", () => {
     expect(text).toContain("in_progress");
   });
 
+  it("renders the shared StatusPill component for each project status", async () => {
+    // Guards the C6.5 fix: templates use the unprefixed <StatusPill> name,
+    // so a resolution regression would render nothing instead of the pill.
+    (globalThis as any).useApi = () => ({
+      get: vi.fn().mockResolvedValue([
+        {
+          id: "p1",
+          name: "Neon Horizon",
+          description: "Cyberpunk thriller",
+          status: "in_progress",
+          ownerId: "u1",
+          createdAt: "2026-02-15T10:00:00.000Z",
+          updatedAt: "2026-02-16T14:00:00.000Z",
+        },
+      ]),
+    });
+
+    const DashboardPage = (await import("../pages/app/index.vue")).default;
+    const wrapper = mount(DashboardPage as any, { global: commonGlobal });
+
+    await flushPromises();
+
+    const pill = wrapper.find(".status-pill");
+    expect(pill.exists()).toBe(true);
+    expect(pill.classes()).toContain("is-info");
+    expect(pill.text()).toContain("in_progress");
+  });
+
   it("shows an empty state with create action when user has no projects", async () => {
     (globalThis as any).useApi = () => ({
       get: vi.fn().mockResolvedValue([]),

@@ -12,7 +12,13 @@ async function onSubmit() {
   submitting.value = true;
   errorMessage.value = "";
   try {
-    await auth.signup(form);
+    // Plain object (not the reactive form) so the JSON body is exactly
+    // SignupInput: { name, email, password }.
+    await auth.signup({
+      name: form.name,
+      email: form.email,
+      password: form.password,
+    });
     await navigateTo("/app");
   } catch (err: unknown) {
     const apiErr = err as ApiError | null;

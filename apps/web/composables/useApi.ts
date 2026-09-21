@@ -29,7 +29,12 @@ interface UseApiRequestOptions {
   query?: Record<string, unknown>;
   headers?: HeadersInit;
   credentials?: RequestCredentials;
+  /** Per-request timeout in ms; overrides the default. */
+  timeout?: number;
 }
+
+/** Ceiling so an unresponsive API can never leave a form spinning forever. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 function isApiErrorBody(value: unknown): value is ApiErrorBody {
   if (!value || typeof value !== "object") return false;
@@ -50,11 +55,11 @@ function statusToErrorCode(status: number): ApiErrorCode {
 
 function isSuccess<T>(value: unknown): value is ApiSuccess<T> {
   if (!value || typeof value !== "object") return false;
-  // Envelope: a single `data` field with the payload. Anything else
-  // (errors, leaks, non-enveloped responses) is treated as a non-success
-  // and passed through so the caller's `T` matches the API contract.
+  // Strict one-level envelope: success is `data` without a competing
+  // `error` field. Anything else (non-enveloped payloads) is passed
+  // through so the caller's `T` matches the API contract.
   const obj = value as Record<string, unknown>;
-  return "data" in obj && Object.keys(obj).length <= 2 && ("data" in obj);
+  return "data" in obj && !("error" in obj);
 }
 
 function unwrap<T>(value: unknown): T {
@@ -67,11 +72,13 @@ export function useApi(): UseApi {
   const base = `${config.public.apiBase}/api/v1`;
 
   async function request<T>(path: string, options: UseApiRequestOptions = {}): Promise<T> {
+    const { timeout = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options;
     try {
       const response = await $fetch<T>(`${base}${path}`, {
         credentials: "include",
-        ...(options as Parameters<typeof $fetch<T>>[1]),
-      });
+        timeout,
+        ...fetchOptions,
+      } as Parameters<typeof $fetch<T>>[1]);
       return unwrap<T>(response);
     } catch (cause: unknown) {
       // $fetch throws FetchError with `.data` (response body) and `.status`.
