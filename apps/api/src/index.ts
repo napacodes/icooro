@@ -64,7 +64,18 @@ app.get("/api/v1/health/db", async (c) => {
     const db = getDb();
     await db.execute(sql`SELECT 1`);
     return c.json({ ok: true });
-  } catch {
+  } catch (err) {
+    // A dead/unreachable database used to vanish here: the probe
+    // returned `ok: false` with no server-side trace, which made
+    // request-level 500s (every query throws) impossible to diagnose.
+    // Log sanitized connection-level detail only — this probe runs a
+    // `SELECT 1`, so the message carries no user data or secrets.
+    const e = err as { code?: string; errno?: number; message?: string };
+    console.error("[health/db] database check failed", {
+      code: e?.code,
+      errno: e?.errno,
+      message: e?.message,
+    });
     return c.json({ ok: false }, 503);
   }
 });
