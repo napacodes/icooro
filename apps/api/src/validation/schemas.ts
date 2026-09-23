@@ -35,6 +35,8 @@ export {
   adminUpdateUserSchema,
   adminUpdateProviderSchema,
   adminUpdateModelSchema,
+  adminCreateProviderSchema,
+  adminCreateModelSchema,
   // input types
   type SignupInput,
   type LoginInput,
@@ -52,6 +54,8 @@ export {
   type AdminUpdateUserInput,
   type AdminUpdateProviderInput,
   type AdminUpdateModelInput,
+  type AdminCreateProviderInput,
+  type AdminCreateModelInput,
 } from "@icooro/shared";
 
 import type { ZodError } from "zod";

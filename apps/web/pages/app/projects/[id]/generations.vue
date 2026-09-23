@@ -50,22 +50,35 @@
               :options="jobTypeOptions"
             />
           </div>
-          <div class="form-row">
-            <BaseSelect
-              v-model="form.providerId"
-              label="AI Provider"
-              :options="providerOptions"
-            />
-            <BaseSelect
-              v-model="form.modelId"
-              label="AI Model"
-              :options="modelOptions"
-            />
+          <div v-if="noProvidersConfigured" class="config-notice">
+            No AI providers are configured yet. An admin must add a provider and a model in the
+            Control Plane before generation jobs can be created.
           </div>
+          <template v-else>
+            <div class="form-row">
+              <BaseSelect
+                v-model="form.providerId"
+                label="AI Provider"
+                :options="providerOptions"
+                placeholder="Select provider…"
+              />
+              <BaseSelect
+                v-model="form.modelId"
+                label="AI Model"
+                :options="modelOptions"
+                placeholder="Select model…"
+              />
+            </div>
+            <div v-if="noModelsForMediaType" class="config-notice">
+              No enabled model supports "{{ form.targetMediaType }}" generation for the selected
+              provider. Configure one in the Control Plane or choose another media type.
+            </div>
+          </template>
           <BaseButton
             type="submit"
             variant="primary"
             :loading="creating"
+            :disabled="noProvidersConfigured || noModelsForMediaType"
           >
             Create Generation Job
           </BaseButton>
@@ -170,26 +183,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
-
-type GenerationJob = {
-  id: string;
-  projectId: string;
-  jobType: string;
-  status: string;
-  providerId: string | null;
-  modelId: string | null;
-  prompt: string | null;
-  targetMediaType: string;
-  progress: number | null;
-  error: string | null;
-  assetVersionId: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type Provider = { id: string; name: string; type: string; enabled: number | boolean };
-type Model = { id: string; providerId: string; name: string; modelId: string };
+import { ref, reactive, computed, onMounted, watch } from "vue";
+import { type AiModel, type AiProvider, type GenerationJob } from "@icooro/shared";
 
 const route = useRoute();
 const api = useApi();
@@ -202,8 +197,8 @@ const actionLoadingId = ref<string | null>(null);
 const error = ref<string | null>(null);
 
 const jobs = ref<GenerationJob[]>([]);
-const providers = ref<Provider[]>([]);
-const models = ref<Model[]>([]);
+const providers = ref<AiProvider[]>([]);
+const models = ref<AiModel[]>([]);
 
 function statusTone(status: string): "neutral" | "success" | "warning" | "danger" | "info" {
   switch ((status || "").toLowerCase()) {
@@ -233,8 +228,8 @@ function statusTone(status: string): "neutral" | "success" | "warning" | "danger
 
 const form = reactive({
   prompt: "",
-  targetMediaType: "image",
-  jobType: "text-to-image",
+  targetMediaType: "video",
+  jobType: "text-to-video",
   providerId: "",
   modelId: "",
 });
@@ -245,24 +240,86 @@ const mediaTypeOptions = [
   { label: "Audio", value: "audio" },
 ];
 
-const jobTypeOptions = [
-  { label: "Text to Image", value: "text-to-image" },
-  { label: "Text to Video", value: "text-to-video" },
-  { label: "Text to Audio", value: "text-to-audio" },
-];
+const jobTypeOptions = computed(() => {
+  switch (form.targetMediaType) {
+    case "image":
+      return [{ label: "Text to Image", value: "text-to-image" }];
+    case "audio":
+      return [{ label: "Text to Audio", value: "text-to-audio" }];
+    default:
+      return [{ label: "Text to Video", value: "text-to-video" }];
+  }
+});
 
+/**
+ * Providers and models are entirely database-driven (C6.3): the options below
+ * come from the configured, enabled provider/model records — there are no
+ * hard-coded provider or model choices left in the UI.
+ */
 const providerOptions = computed(() => {
-  const list = providers.value.map((p) => ({ label: p.name, value: p.id }));
-  return [{ label: "Default / Any", value: "" }, ...list];
+  // Only providers that can serve the selected media type are offered.
+  const capability = form.targetMediaType;
+  const usable = models.value.filter((m) => m.capability === capability);
+  const providerIdsWithModel = new Set(usable.map((m) => m.providerId));
+  const list = providers.value
+    .filter((p) => providerIdsWithModel.has(p.id))
+    .map((p) => ({ label: p.name, value: p.id }));
+  return list;
 });
 
 const modelOptions = computed(() => {
-  const filtered = form.providerId
-    ? models.value.filter((m) => m.providerId === form.providerId)
-    : models.value;
-  const list = filtered.map((m) => ({ label: m.name, value: m.id }));
-  return [{ label: "Default / Any", value: "" }, ...list];
+  const filtered = models.value.filter((m) => {
+    if (m.capability !== form.targetMediaType) return false;
+    if (form.providerId && m.providerId !== form.providerId) return false;
+    // A model with no declared job types accepts any job for its capability.
+    if (m.jobTypes && m.jobTypes.length > 0 && !m.jobTypes.includes(form.jobType)) return false;
+    return true;
+  });
+  return filtered.map((m) => ({ label: m.name, value: m.id }));
 });
+
+const noProvidersConfigured = computed(() => providers.value.length === 0);
+const noModelsForMediaType = computed(() => modelOptions.value.length === 0);
+
+// Keep the form internally consistent when the selection context changes.
+watch(
+  () => form.targetMediaType,
+  (mediaType) => {
+    const matching = jobTypeOptions.value;
+    if (matching.length > 0 && !matching.some((o) => o.value === form.jobType)) {
+      form.jobType = matching[0]!.value;
+    }
+    // Drop a provider/model selection that can no longer serve this media type.
+    if (form.providerId && !providerOptions.value.some((o) => o.value === form.providerId)) {
+      form.providerId = "";
+    }
+    if (form.modelId && !modelOptions.value.some((o) => o.value === form.modelId)) {
+      form.modelId = "";
+    }
+    void mediaType;
+  },
+);
+
+watch(
+  () => form.providerId,
+  () => {
+    if (form.modelId && !modelOptions.value.some((o) => o.value === form.modelId)) {
+      form.modelId = "";
+    }
+    if (!form.modelId && modelOptions.value.length > 0) {
+      form.modelId = modelOptions.value[0]!.value;
+    }
+  },
+);
+
+function autoSelectFirstAvailable() {
+  if (!form.providerId && providerOptions.value.length > 0) {
+    form.providerId = providerOptions.value[0]!.value;
+  }
+  if (!form.modelId && modelOptions.value.length > 0) {
+    form.modelId = modelOptions.value[0]!.value;
+  }
+}
 
 function formatDate(iso: string) {
   if (!iso) return "";
@@ -288,12 +345,13 @@ async function init() {
   try {
     const [jobsData, provData, modData] = await Promise.all([
       api.get<GenerationJob[]>(`/projects/${projectId}/jobs`),
-      api.get<Provider[]>("/ai-providers").catch(() => []),
-      api.get<Model[]>("/ai-models").catch(() => []),
+      api.get<AiProvider[]>("/ai-providers").catch(() => []),
+      api.get<AiModel[]>("/ai-models").catch(() => []),
     ]);
     jobs.value = jobsData || [];
     providers.value = provData || [];
     models.value = modData || [];
+    autoSelectFirstAvailable();
   } catch (err: any) {
     error.value = err?.message || "Failed to load generation jobs";
   } finally {
@@ -315,14 +373,18 @@ async function loadJobs() {
 
 async function createJob() {
   if (!form.prompt.trim()) return;
+  if (!form.providerId || !form.modelId) {
+    alert("Select a configured AI provider and model before creating a job.");
+    return;
+  }
   creating.value = true;
   try {
     const created = await api.post<GenerationJob>(`/projects/${projectId}/jobs`, {
       prompt: form.prompt.trim(),
       targetMediaType: form.targetMediaType,
       jobType: form.jobType,
-      providerId: form.providerId || null,
-      modelId: form.modelId || null,
+      providerId: form.providerId,
+      modelId: form.modelId,
     });
     jobs.value.unshift(created);
     form.prompt = "";
@@ -439,6 +501,16 @@ onMounted(init);
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+}
+
+.config-notice {
+  background: #fdf6ec;
+  border-left: 3px solid #b26a00;
+  color: #6b4a00;
+  padding: 0.65rem 0.85rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .jobs-list-container {

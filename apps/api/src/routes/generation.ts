@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/projects.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
@@ -21,7 +21,7 @@ import {
   ResultDownloadError,
   ResultStorageError,
 } from "../services/generation_result.js";
-import { ProviderRegistry } from "../providers/registry.js";
+import { toModelDto, toProviderDto } from "../providers/dto.js";
 import {
   createGenerationJobSchema,
   formatZodError,
@@ -122,6 +122,9 @@ nestedGenerationJobsRoute.post("/projects/:projectId/jobs", async (c) => {
     });
     return c.json({ data: created }, 201);
   } catch (error: any) {
+    // C6.3 validation failures are returned as thrown strings from
+    // GenerationJobService.validateProviderAndModel: each carries its own
+    // status so the client gets a meaningful error instead of a 500.
     if (
       error.message === "Project not found" ||
       error.message === "Episode not found" ||
@@ -129,11 +132,16 @@ nestedGenerationJobsRoute.post("/projects/:projectId/jobs", async (c) => {
       error.message === "Shot not found" ||
       error.message === "Referenced asset not found" ||
       error.message === "AI Provider not found" ||
-      error.message === "AI Model not found"
+      error.message === "AI Model not found" ||
+      error.message === "AI Provider is disabled" ||
+      error.message === "AI Model is disabled"
     ) {
       return c.json(bad(error.message, 404), 404);
     }
-    if (error.message.includes("does not belong")) {
+    if (
+      error.message.includes("does not belong") ||
+      error.message.includes("does not support the requested media type")
+    ) {
       return c.json(bad(error.message, 400), 400);
     }
     console.error("Failed to create generation job", error);
@@ -253,15 +261,21 @@ generationJobsRoute.post("/:id/poll", async (c) => {
   }
 });
 
-// --- AI Providers and Models Routes ---
+// --- AI Providers and Models Routes (C6.3 — database-driven selection) ---
 
-
+/**
+ * Providers selectable in the project generation UI.
+ *
+ * Only ENABLED providers are returned, and the sealed API key is never
+ * included in the payload (see toProviderDto): the browser only ever sees a
+ * masked preview plus a "configured" flag. The UI builds its provider list
+ * from this endpoint instead of hard-coded options.
+ */
 aiProvidersRoute.get("/", async (c) => {
   try {
     const rows = await getDb().select().from(aiProviders);
-    // Credentials stripped before returning!
-    const sanitized = rows.map((row) => ProviderRegistry.sanitizeProvider(row));
-    return c.json({ data: sanitized });
+    const enabled = rows.filter((row) => Boolean(row.enabled));
+    return c.json({ data: enabled.map((row) => toProviderDto(row)) });
   } catch (error) {
     console.error("Failed to list AI providers", error);
     return c.json(internal(), 500);
@@ -277,23 +291,43 @@ aiProvidersRoute.get("/:id", async (c) => {
     if (!row) {
       return c.json(bad("Provider not found", 404), 404);
     }
-    return c.json({ data: ProviderRegistry.sanitizeProvider(row) });
+    return c.json({ data: toProviderDto(row) });
   } catch (error) {
     console.error("Failed to get AI provider", error);
     return c.json(internal(), 500);
   }
 });
 
+/**
+ * Models selectable in the project generation UI. Only ENABLED models bound
+ * to an ENABLED provider are returned, so a disabled provider can never be
+ * reached through selection. Supports `?providerId=` and `?capability=`
+ * filters for cascading selects.
+ */
 aiModelsRoute.get("/", async (c) => {
   try {
     const providerId = c.req.query("providerId");
-    const rows = providerId
-      ? await getDb()
-          .select()
-          .from(aiModels)
-          .where(eq(aiModels.providerId, providerId))
-      : await getDb().select().from(aiModels);
-    return c.json({ data: rows });
+    const capability = c.req.query("capability");
+
+    const conditions = [eq(aiModels.enabled, true)];
+    if (providerId) conditions.push(eq(aiModels.providerId, providerId));
+    if (capability) conditions.push(eq(aiModels.capability, capability));
+
+    const rows = await getDb()
+      .select()
+      .from(aiModels)
+      .where(and(...conditions));
+
+    const providerRows = await getDb().select().from(aiProviders);
+    const enabledProviderMap = new Map(
+      providerRows.filter((p) => Boolean(p.enabled)).map((p) => [p.id, p.name]),
+    );
+
+    const data = rows
+      .filter((m) => enabledProviderMap.has(m.providerId))
+      .map((m) => toModelDto(m, enabledProviderMap.get(m.providerId) ?? null));
+
+    return c.json({ data });
   } catch (error) {
     console.error("Failed to list AI models", error);
     return c.json(internal(), 500);

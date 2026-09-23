@@ -12,6 +12,11 @@ export const aiModels = mysqlTable(
     name: varchar("name", { length: 255 }).notNull(),
     modelId: varchar("model_id", { length: 255 }).notNull(),
     capability: varchar("capability", { length: 100 }).notNull(),
+    /**
+     * Generation job types this model supports, e.g. ["text-to-video"].
+     * Null means "any job type for this capability".
+     */
+    jobTypes: json("job_types"),
     enabled: boolean("enabled").notNull().default(true),
     metadata: json("metadata"),
     createdAt: createdAtColumn(),

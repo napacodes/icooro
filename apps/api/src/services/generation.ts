@@ -11,6 +11,7 @@ import { assets } from "../db/schema/assets.js";
 import { assetVersions } from "../db/schema/asset_versions.js";
 import type { GenerationJobStatus } from "../providers/types.js";
 import { providerRegistry } from "../providers/registry.js";
+import { resolveAdapter } from "../providers/factory.js";
 
 /**
  * Thrown by `completeJobWithAssetVersion` when a concurrent caller has
@@ -129,23 +130,36 @@ export class GenerationJobService {
       }
     }
 
-    // Verify provider & model if specified
+    // Verify provider & model if specified. Only enabled provider/model
+    // records are accepted so a disabled configuration can never be bound
+    // to a new job; the model must belong to the provider and must support
+    // the job's target media type.
     if (input.providerId) {
       const [provider] = await db
-        .select({ id: aiProviders.id })
+        .select({ id: aiProviders.id, enabled: aiProviders.enabled })
         .from(aiProviders)
         .where(eq(aiProviders.id, input.providerId));
       if (!provider) return "AI Provider not found";
+      if (!provider.enabled) return "AI Provider is disabled";
     }
 
     if (input.modelId) {
       const [model] = await db
-        .select({ id: aiModels.id, providerId: aiModels.providerId })
+        .select({
+          id: aiModels.id,
+          providerId: aiModels.providerId,
+          enabled: aiModels.enabled,
+          capability: aiModels.capability,
+        })
         .from(aiModels)
         .where(eq(aiModels.id, input.modelId));
       if (!model) return "AI Model not found";
+      if (!model.enabled) return "AI Model is disabled";
       if (input.providerId && model.providerId !== input.providerId) {
         return "Model does not belong to the specified provider";
+      }
+      if (input.targetMediaType && model.capability !== input.targetMediaType) {
+        return "Model does not support the requested media type";
       }
     }
 
@@ -253,7 +267,10 @@ export class GenerationJobService {
         .from(aiProviders)
         .where(eq(aiProviders.id, job.providerId));
       if (provider) {
-        const adapter = providerRegistry.get(provider.providerType);
+        // Resolve the adapter the same way submit/poll do, so cancellation
+        // reaches the record-configured provider instance.
+        const capability = (job.targetMediaType as "video" | "image" | "audio" | null) ?? "video";
+        const adapter = resolveAdapter(provider, capability) ?? providerRegistry.get(provider.providerType);
         if (adapter && "cancelJob" in adapter) {
           try {
             await (adapter as any).cancelJob(job.externalJobId);

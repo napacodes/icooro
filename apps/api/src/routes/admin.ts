@@ -7,9 +7,13 @@ import { aiProviders } from "../db/schema/ai_providers.js";
 import { aiModels } from "../db/schema/ai_models.js";
 import { aiJobs } from "../db/schema/ai_jobs.js";
 import { requireAdmin, sessionMiddleware } from "../middleware/session.js";
-import { ProviderRegistry } from "../providers/registry.js";
+import { providerSecretStore } from "../providers/secrets.js";
+import { isAdaptableProviderType, isKnownProviderType, listProviderTypes } from "../providers/types_catalog.js";
+import { toModelDto, toProviderDto } from "../providers/dto.js";
 import { generationJobService } from "../services/generation.js";
 import {
+  adminCreateModelSchema,
+  adminCreateProviderSchema,
   adminUpdateModelSchema,
   adminUpdateProviderSchema,
   adminUpdateUserSchema,
@@ -55,6 +59,12 @@ function sanitizeUser(u: Record<string, unknown>) {
     createdAt: u.createdAt instanceof Date ? u.createdAt.toISOString() : u.createdAt,
     updatedAt: u.updatedAt instanceof Date ? u.updatedAt.toISOString() : u.updatedAt,
   };
+}
+
+async function providerNameFor(db: ReturnType<typeof getDb>, providerId: string | null | undefined) {
+  if (!providerId) return null;
+  const [provider] = await db.select({ name: aiProviders.name }).from(aiProviders).where(eq(aiProviders.id, providerId));
+  return provider?.name ?? null;
 }
 
 function stub(section: string) {
@@ -270,15 +280,25 @@ adminRoute.delete("/projects/:id", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. AI Providers
+// 4. AI Providers (C6.3 — database-driven provider configuration)
 // ---------------------------------------------------------------------------
+
+/**
+ * Provider types an admin can configure (C6.7.1). Covers the whole Icooro
+ * provider architecture — openai, google_gemini, custom_openai_compatible
+ * and chatfire — with an `adapterAvailable` flag marking the ones whose
+ * network adapter is already implemented. The Admin UI uses this to label
+ * reserved types ("adapter coming soon") instead of hiding them.
+ */
+adminRoute.get("/provider-types", (c) => {
+  return c.json({ data: listProviderTypes() });
+});
 
 adminRoute.get("/providers", async (c) => {
   try {
     const db = getDb();
     const rows = await db.select().from(aiProviders);
-    const sanitized = rows.map((row: any) => ProviderRegistry.sanitizeProvider(row));
-    return c.json({ data: sanitized });
+    return c.json({ data: rows.map((row: any) => toProviderDto(row)) });
   } catch (error) {
     console.error("Failed to list AI providers", error);
     return c.json(internal(), 500);
@@ -292,9 +312,87 @@ adminRoute.get("/providers/:id", async (c) => {
     if (!row) {
       return c.json(bad("Provider not found", 404), 404);
     }
-    return c.json({ data: ProviderRegistry.sanitizeProvider(row) });
+    return c.json({ data: toProviderDto(row) });
   } catch (error) {
     console.error("Failed to get AI provider", error);
+    return c.json(internal(), 500);
+  }
+});
+
+adminRoute.post("/providers", async (c) => {
+  const body = await parseJsonBody(c);
+  if (!body || typeof body !== "object") {
+    return c.json(bad("Request body must be a JSON object"), 400);
+  }
+  const parsed = adminCreateProviderSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(formatZodError(parsed.error), 400);
+  }
+
+  if (!isKnownProviderType(parsed.data.providerType)) {
+    return c.json(
+      bad(
+        `Unknown provider type "${parsed.data.providerType}" — it is not part of the Icooro provider architecture (expected one of: openai, google_gemini, custom_openai_compatible, chatfire)`,
+        400,
+      ),
+      400,
+    );
+  }
+
+  // A reserved type (adapter not implemented yet) may be *modelled* in the
+  // Control Plane, but cannot be given credentials or enabled for
+  // generation. Otherwise an admin could save a working-looking provider
+  // that would only fail at run time.
+  if (!isAdaptableProviderType(parsed.data.providerType)) {
+    return c.json(
+      bad(
+        `Provider type "${parsed.data.providerType}" has no adapter implementation yet — it is reserved for a later phase and cannot be configured with credentials.`,
+        400,
+      ),
+      400,
+    );
+  }
+
+  try {
+    const db = getDb();
+
+    // Duplicate (name) providers would be confusing in the Control Plane;
+    // the unique constraint is at the adapter+baseUrl+key level in practice.
+    const [existing] = await db
+      .select({ id: aiProviders.id })
+      .from(aiProviders)
+      .where(eq(aiProviders.name, parsed.data.name));
+    if (existing) {
+      return c.json(bad("A provider with this name already exists", 409), 409);
+    }
+
+    const apiKeySecret =
+      parsed.data.apiKey !== undefined && parsed.data.apiKey !== ""
+        ? providerSecretStore.seal(parsed.data.apiKey)
+        : null;
+
+    const [created] = await db
+      .insert(aiProviders)
+      .values({
+        name: parsed.data.name,
+        providerType: parsed.data.providerType,
+        enabled: parsed.data.enabled ?? true,
+        baseUrl: parsed.data.baseUrl ?? null,
+        apiKeySecret,
+        config: parsed.data.config ?? null,
+      })
+      .$returningId();
+    if (!created) {
+      return c.json(internal(), 500);
+    }
+
+    const [row] = await db.select().from(aiProviders).where(eq(aiProviders.id, created.id));
+    if (!row) {
+      return c.json(internal(), 500);
+    }
+    return c.json({ data: toProviderDto(row) }, 201);
+  } catch (error) {
+    console.error("Failed to create AI provider", error);
     return c.json(internal(), 500);
   }
 });
@@ -317,27 +415,77 @@ adminRoute.patch("/providers/:id", async (c) => {
       return c.json(bad("Provider not found", 404), 404);
     }
 
-    await db
-      .update(aiProviders)
-      .set({
-        ...parsed.data,
-        updatedAt: new Date(),
-      })
-      .where(eq(aiProviders.id, id));
+    // apiKey is write-only: present means rotate, absent means keep as-is.
+    const { apiKey, ...rest } = parsed.data;
+    const updateValues: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+    if (apiKey !== undefined) {
+      updateValues.apiKeySecret = apiKey === "" ? null : providerSecretStore.seal(apiKey);
+    }
+
+    await db.update(aiProviders).set(updateValues).where(eq(aiProviders.id, id));
 
     const [updated] = await db.select().from(aiProviders).where(eq(aiProviders.id, id));
     if (!updated) {
       return c.json(internal(), 500);
     }
-    return c.json({ data: ProviderRegistry.sanitizeProvider(updated) });
+    return c.json({ data: toProviderDto(updated) });
   } catch (error) {
     console.error("Failed to update AI provider", error);
     return c.json(internal(), 500);
   }
 });
 
+adminRoute.delete("/providers/:id", async (c) => {
+  try {
+    const db = getDb();
+    const id = c.req.param("id");
+    const [existing] = await db.select().from(aiProviders).where(eq(aiProviders.id, id));
+    if (!existing) {
+      return c.json(bad("Provider not found", 404), 404);
+    }
+
+    // Safe-delete guard: models are ON DELETE CASCADE and jobs are
+    // ON DELETE SET NULL, so removing a referenced provider would silently
+    // destroy model configuration and strip generation provenance. Require
+    // the admin to remove models and wait for jobs to clear first.
+    const boundModels = await db
+      .select({ id: aiModels.id })
+      .from(aiModels)
+      .where(eq(aiModels.providerId, id));
+    if (boundModels.length > 0) {
+      return c.json(
+        bad(
+          `Cannot delete provider: ${boundModels.length} model(s) are still bound to it. Remove the models first (or disable the provider instead).`,
+          409,
+        ),
+        409,
+      );
+    }
+
+    const referencingJobs = await db
+      .select({ id: aiJobs.id })
+      .from(aiJobs)
+      .where(eq(aiJobs.providerId, id));
+    if (referencingJobs.length > 0) {
+      return c.json(
+        bad(
+          `Cannot delete provider: ${referencingJobs.length} generation job(s) still reference it. Disable the provider instead to keep job history intact.`,
+          409,
+        ),
+        409,
+      );
+    }
+
+    await db.delete(aiProviders).where(eq(aiProviders.id, id));
+    return c.body(null, 204);
+  } catch (error) {
+    console.error("Failed to delete AI provider", error);
+    return c.json(internal(), 500);
+  }
+});
+
 // ---------------------------------------------------------------------------
-// 5. AI Models
+// 5. AI Models (C6.3 — database-driven model configuration)
 // ---------------------------------------------------------------------------
 
 adminRoute.get("/models", async (c) => {
@@ -349,14 +497,9 @@ adminRoute.get("/models", async (c) => {
       : await db.select().from(aiModels);
 
     const providerRows = await db.select().from(aiProviders);
-    const providerMap = new Map(providerRows.map((p: any) => [p.id, p]));
+    const providerMap = new Map(providerRows.map((p: any) => [p.id, p.name]));
 
-    const data = rows.map((m: any) => ({
-      ...m,
-      providerName: providerMap.get(m.providerId)?.name ?? null,
-    }));
-
-    return c.json({ data });
+    return c.json({ data: rows.map((m: any) => toModelDto(m, providerMap.get(m.providerId))) });
   } catch (error) {
     console.error("Failed to list AI models", error);
     return c.json(internal(), 500);
@@ -371,15 +514,74 @@ adminRoute.get("/models/:id", async (c) => {
     if (!m) {
       return c.json(bad("Model not found", 404), 404);
     }
-    const [provider] = await db.select().from(aiProviders).where(eq(aiProviders.id, m.providerId));
-    return c.json({
-      data: {
-        ...m,
-        providerName: provider?.name ?? null,
-      },
-    });
+    const providerName = await providerNameFor(db, m.providerId);
+    return c.json({ data: toModelDto(m, providerName) });
   } catch (error) {
     console.error("Failed to get AI model", error);
+    return c.json(internal(), 500);
+  }
+});
+
+adminRoute.post("/models", async (c) => {
+  const body = await parseJsonBody(c);
+  if (!body || typeof body !== "object") {
+    return c.json(bad("Request body must be a JSON object"), 400);
+  }
+  const parsed = adminCreateModelSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(formatZodError(parsed.error), 400);
+  }
+
+  try {
+    const db = getDb();
+
+    // Provider relationship: the model must bind to an existing provider.
+    const [provider] = await db
+      .select({ id: aiProviders.id, providerType: aiProviders.providerType })
+      .from(aiProviders)
+      .where(eq(aiProviders.id, parsed.data.providerId));
+    if (!provider) {
+      return c.json(bad("Provider not found — cannot bind a model to a nonexistent provider", 404), 404);
+    }
+
+    // Duplicate (providerId, modelId) is guarded by a unique index; fail
+    // with a clear 409 instead of surfacing a DB error.
+    const [duplicate] = await db
+      .select({ id: aiModels.id })
+      .from(aiModels)
+      .where(
+        and(eq(aiModels.providerId, parsed.data.providerId), eq(aiModels.modelId, parsed.data.modelId)),
+      );
+    if (duplicate) {
+      return c.json(
+        bad("A model with this external model ID already exists for this provider", 409),
+        409,
+      );
+    }
+
+    const [created] = await db
+      .insert(aiModels)
+      .values({
+        providerId: parsed.data.providerId,
+        name: parsed.data.name,
+        modelId: parsed.data.modelId,
+        capability: parsed.data.capability,
+        jobTypes: parsed.data.jobTypes ?? null,
+        enabled: parsed.data.enabled ?? true,
+        metadata: parsed.data.metadata ?? null,
+      })
+      .$returningId();
+    if (!created) {
+      return c.json(internal(), 500);
+    }
+
+    const [row] = await db.select().from(aiModels).where(eq(aiModels.id, created.id));
+    if (!row) {
+      return c.json(internal(), 500);
+    }
+    return c.json({ data: toModelDto(row, await providerNameFor(db, row.providerId)) }, 201);
+  } catch (error) {
+    console.error("Failed to create AI model", error);
     return c.json(internal(), 500);
   }
 });
@@ -402,27 +604,48 @@ adminRoute.patch("/models/:id", async (c) => {
       return c.json(bad("Model not found", 404), 404);
     }
 
-    await db
-      .update(aiModels)
-      .set({
-        ...parsed.data,
-        updatedAt: new Date(),
-      })
-      .where(eq(aiModels.id, id));
+    await db.update(aiModels).set({ ...parsed.data, updatedAt: new Date() }).where(eq(aiModels.id, id));
 
     const [updated] = await db.select().from(aiModels).where(eq(aiModels.id, id));
     if (!updated) {
       return c.json(internal(), 500);
     }
-    const [provider] = await db.select().from(aiProviders).where(eq(aiProviders.id, updated.providerId));
-    return c.json({
-      data: {
-        ...updated,
-        providerName: provider?.name ?? null,
-      },
-    });
+    return c.json({ data: toModelDto(updated, await providerNameFor(db, updated.providerId)) });
   } catch (error) {
     console.error("Failed to update AI model", error);
+    return c.json(internal(), 500);
+  }
+});
+
+adminRoute.delete("/models/:id", async (c) => {
+  try {
+    const db = getDb();
+    const id = c.req.param("id");
+    const [existing] = await db.select().from(aiModels).where(eq(aiModels.id, id));
+    if (!existing) {
+      return c.json(bad("Model not found", 404), 404);
+    }
+
+    // Safe-delete guard: jobs reference models ON DELETE SET NULL, so
+    // deleting a used model would strip provenance from generation history.
+    const referencingJobs = await db
+      .select({ id: aiJobs.id })
+      .from(aiJobs)
+      .where(eq(aiJobs.modelId, id));
+    if (referencingJobs.length > 0) {
+      return c.json(
+        bad(
+          `Cannot delete model: ${referencingJobs.length} generation job(s) still reference it. Disable the model instead to keep job history intact.`,
+          409,
+        ),
+        409,
+      );
+    }
+
+    await db.delete(aiModels).where(eq(aiModels.id, id));
+    return c.body(null, 204);
+  } catch (error) {
+    console.error("Failed to delete AI model", error);
     return c.json(internal(), 500);
   }
 });

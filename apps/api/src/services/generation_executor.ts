@@ -3,7 +3,7 @@ import { getDb } from "../db/index.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
 import { aiModels } from "../db/schema/ai_models.js";
 import { generationJobService, isValidJobStatusTransition } from "./generation.js";
-import { providerRegistry } from "../providers/registry.js";
+import { resolveVideoProvider } from "../providers/factory.js";
 import type { GenerationJobStatus, VideoGenerationParams } from "../providers/types.js";
 
 // ---------------------------------------------------------------------------
@@ -210,8 +210,9 @@ export class GenerationExecutorService {
       );
     }
 
-    // 5. Resolve adapter
-    const adapter = providerRegistry.getVideoProvider(providerRecord.providerType);
+    // 5. Resolve adapter (record-configured when the type has a factory,
+    //    otherwise the registry singleton) and require video capability.
+    const adapter = resolveVideoProvider(providerRecord);
     if (!adapter) {
       throw new ExecutorConfigError(
         `No registered VideoProvider for type "${providerRecord.providerType}"`,
@@ -343,7 +344,7 @@ export class GenerationExecutorService {
       );
     }
 
-    const adapter = providerRegistry.getVideoProvider(providerRecord.providerType);
+    const adapter = resolveVideoProvider(providerRecord);
     if (!adapter) {
       throw new ExecutorConfigError(
         `No registered VideoProvider for type "${providerRecord.providerType}"`,

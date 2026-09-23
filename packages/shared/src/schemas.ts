@@ -1,11 +1,15 @@
 import { z } from "zod";
 import {
   ASSET_LIFECYCLE_STATUSES,
+  GENERATION_JOB_TYPES,
   JOB_STATUSES,
   MEDIA_TYPES,
+  PROVIDER_CAPABILITIES,
   SHOT_ASSET_ROLES,
   SOURCE_KINDS,
   USER_ROLES,
+  type GenerationJobType,
+  type ProviderCapability,
 } from "./constants.js";
 
 // ---------------------------------------------------------------------------
@@ -228,19 +232,90 @@ export type AdminUpdateUserInput = z.infer<typeof adminUpdateUserSchema>;
 export const adminUpdateProviderSchema = z
   .object({
     name: z.string().trim().min(1).max(255).optional(),
+    baseUrl: z.string().trim().url("baseUrl must be a valid URL").max(500).nullable().optional(),
+    /**
+     * Write-only. Omit to keep the existing key; pass a new value to rotate it.
+     * Never returned by the API.
+     */
+    apiKey: z.string().trim().min(1, "apiKey must not be empty").max(512).optional(),
     enabled: z.boolean().optional(),
+    config: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one field (name or enabled) is required for update",
+    message: "At least one field (name, baseUrl, apiKey, enabled, or config) is required for update",
   });
 export type AdminUpdateProviderInput = z.infer<typeof adminUpdateProviderSchema>;
+
+export const adminCreateProviderSchema = z.object({
+  name: z.string().trim().min(1, "name is required").max(255),
+  /**
+   * Provider / adapter type — must be one of the types in the Icooro
+   * provider architecture (openai, google_gemini, custom_openai_compatible,
+   * chatfire). The API validates this against the provider-type catalog and
+   * additionally rejects types whose adapter is not implemented yet.
+   */
+  providerType: z.string().trim().min(1, "providerType is required").max(100),
+  baseUrl: z.string().trim().url("baseUrl must be a valid URL").max(500).nullable().optional(),
+  apiKey: z.string().trim().min(1, "apiKey must not be empty").max(512).optional(),
+  enabled: z.boolean().optional(),
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export type AdminCreateProviderInput = z.infer<typeof adminCreateProviderSchema>;
 
 export const adminUpdateModelSchema = z
   .object({
     name: z.string().trim().min(1).max(255).optional(),
+    modelId: z.string().trim().min(1).max(255).optional(),
+    capability: z.enum(PROVIDER_CAPABILITIES).optional(),
+    jobTypes: z.array(z.enum(GENERATION_JOB_TYPES)).max(16).nullable().optional(),
     enabled: z.boolean().optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one field (name or enabled) is required for update",
+    message:
+      "At least one field (name, modelId, capability, jobTypes, enabled, or metadata) is required for update",
   });
 export type AdminUpdateModelInput = z.infer<typeof adminUpdateModelSchema>;
+
+export const adminCreateModelSchema = z.object({
+  providerId: z.string().trim().length(36, "providerId must be a valid provider ID"),
+  name: z.string().trim().min(1, "name is required").max(255),
+  /** Model identifier used by the external provider API. */
+  modelId: z.string().trim().min(1, "modelId is required").max(255),
+  /**
+   * One explicit capability (text | image | video | audio | vision). The
+   * capability-routing layer matches on this exactly.
+   */
+  capability: z.enum(PROVIDER_CAPABILITIES),
+  /**
+   * Generation job types the model serves. Must belong to the capability:
+   * "vision" is a recognition capability and has no generation job type, so
+   * pairing it with a job type is rejected here rather than at the DB layer.
+   */
+  jobTypes: z.array(z.enum(GENERATION_JOB_TYPES)).max(16).nullable().optional(),
+  enabled: z.boolean().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export type AdminCreateModelInput = z.infer<typeof adminCreateModelSchema>;
+
+/**
+ * Capabilities that can produce media (and therefore have a generation job
+ * type). "vision" is excluded: it is an input/recognition capability
+ * (image → text) and has no generation route.
+ */
+export const GENERATION_CAPABILITIES: readonly ProviderCapability[] = [
+  "text",
+  "image",
+  "video",
+  "audio",
+];
+
+/**
+ * Capability a job type targets. Used by the API to validate that a model
+ * is actually able to serve the media type a generation job asks for.
+ */
+export const JOB_TYPE_CAPABILITY: Readonly<Record<GenerationJobType, ProviderCapability>> = {
+  "text-to-image": "image",
+  "text-to-video": "video",
+  "text-to-audio": "audio",
+};

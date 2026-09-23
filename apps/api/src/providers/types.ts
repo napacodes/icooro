@@ -1,4 +1,13 @@
-export type ProviderCapability = "text" | "image" | "video" | "audio";
+/**
+ * Capabilities a provider adapter can implement.
+ *
+ * Kept in sync with `PROVIDER_CAPABILITIES` in packages/shared so the API and
+ * the browser validate against the same list.
+ *
+ * "vision" is an *input* capability (image → text/recognition); it has no
+ * generation job type and therefore no generation job route.
+ */
+export type ProviderCapability = "text" | "image" | "video" | "audio" | "vision";
 
 export type GenerationJobStatus =
   | "queued"

@@ -39,6 +39,12 @@ import { authRoute } from "./routes/auth.js";
 import { adminRoute } from "./routes/admin.js";
 import { sessionMiddleware, requireUser } from "./middleware/session.js";
 
+// Importing the providers barrel registers the process-wide adapter
+// singletons (C5.1) and the configurable adapter factories (C6.3). This
+// side-effect import must happen before any request reaches the
+// generation services, which resolve adapters through both maps.
+import "./providers/index.js";
+
 export const app = new Hono();
 
 // Browser origins that may call the API with credentials. Driven by

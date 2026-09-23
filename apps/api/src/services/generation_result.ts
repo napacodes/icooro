@@ -3,7 +3,7 @@ import { getDb } from "../db/index.js";
 import { aiProviders } from "../db/schema/ai_providers.js";
 import { assetVersions } from "../db/schema/asset_versions.js";
 import { assets } from "../db/schema/assets.js";
-import { providerRegistry } from "../providers/registry.js";
+import { resolveVideoProvider } from "../providers/factory.js";
 import { generationJobService, JobAlreadyLinkedError } from "./generation.js";
 import { getStorageProvider } from "../storage/index.js";
 
@@ -261,7 +261,7 @@ export class GenerationResultService {
       throw new ResultConfigError(`Provider "${job.providerId}" not found in database`);
     }
 
-    const adapter = providerRegistry.getVideoProvider(providerRecord.providerType);
+    const adapter = resolveVideoProvider(providerRecord);
     if (!adapter) {
       throw new ResultConfigError(
         `No registered VideoProvider for type "${providerRecord.providerType}"`,

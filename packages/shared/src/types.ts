@@ -183,6 +183,14 @@ export interface AiProvider {
   name: string;
   providerType: string;
   enabled: boolean;
+  baseUrl?: string | null;
+  /**
+   * Masked preview of the configured API key (e.g. "sk_•••••••1234").
+   * The raw key is NEVER returned by the API.
+   */
+  apiKeyMasked?: string | null;
+  /** True when an API key is stored for this provider. */
+  hasApiKey?: boolean;
   config?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
@@ -194,11 +202,28 @@ export interface AiModel {
   name: string;
   modelId: string;
   capability: string;
+  /** Supported generation job types, e.g. ["text-to-video"]. */
+  jobTypes?: string[] | null;
   enabled: boolean;
   metadata?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   providerName?: string | null;
+}
+
+/**
+ * Describes a provider adapter type registered in the API's provider
+ * factory (e.g. "chatfire"). Used by the Admin UI to populate the
+ * provider-type selector and to validate admin input.
+ *
+ * Note the fuller `ProviderTypeDescriptor` (which adds the reserved /
+ * `adapterAvailable` flag) lives in `constants.ts` and is the catalog shape
+ * the Control Plane lists.
+ */
+export interface ProviderTypeInfo {
+  providerType: string;
+  name: string;
+  capabilities: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
