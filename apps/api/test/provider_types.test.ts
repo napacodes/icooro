@@ -325,7 +325,9 @@ test("C6.7.1 Catalog - ChatFire is one optional provider type, not the centre", 
 });
 
 test("C6.7.1 Catalog - reserved types are listed but marked unavailable", () => {
-  const reserved = ["openai", "google_gemini", "custom_openai_compatible"];
+  // C6.7.2.3: the custom OpenAI-compatible adapter landed — every catalog
+  // type now has an adapter, so nothing is reserved any more.
+  const reserved: string[] = [];
   for (const type of reserved) {
     const descriptor = describeProviderType(type)!;
     assert.equal(
@@ -338,14 +340,33 @@ test("C6.7.1 Catalog - reserved types are listed but marked unavailable", () => 
     assert.ok(providerTypeNotAdaptableReason(type), `${type} must have an unusable reason`);
   }
 
-  assert.equal(providerTypeNotAdaptableReason("chatfire"), null);
+  // All four types are implemented (text-only for the three text adapters;
+  // ChatFire video). No image/video/audio capabilities are claimed beyond
+  // what each adapter genuinely implements.
+  const implemented = [
+    ["openai", ["text"]],
+    ["google_gemini", ["text"]],
+    ["custom_openai_compatible", ["text"]],
+    ["chatfire", ["video"]],
+  ] as const;
+  for (const [type, caps] of implemented) {
+    const descriptor = describeProviderType(type)!;
+    assert.equal(descriptor.adapterAvailable, true, `${type} adapter is implemented`);
+    assert.equal(isAdaptableProviderType(type), true);
+    assert.deepEqual([...descriptor.capabilities], [...caps], `${type} capability set`);
+    assert.equal(providerTypeNotAdaptableReason(type), null);
+  }
+
   assert.ok(providerTypeNotAdaptableReason("nope")!.includes("Unknown provider type"));
 });
 
 test("C6.7.1 Catalog - type matching is case-insensitive and labels unknown types", () => {
   assert.ok(isKnownProviderType("OpenAI"));
   assert.ok(isKnownProviderType("GOOGLE_GEMINI"));
-  assert.equal(capabilitiesForType("Google_Gemini").length, 5);
+  // Gemini is text-only as of C6.7.2.2 (was the full 5-capability set in
+  // C6.7.1, before its adapter landed).
+  assert.equal(capabilitiesForType("Google_Gemini").length, 1);
+  assert.deepEqual([...capabilitiesForType("Google_Gemini")], ["text"]);
   assert.equal(providerTypeLabel("openai"), "OpenAI");
   assert.equal(providerTypeLabel("not-a-type"), "not-a-type");
 });
@@ -414,8 +435,25 @@ test("C6.7.1 Factory - chatfire is registered as a configurable adapter type", (
   assert.ok(getAdapterFactory("chatfire"));
   assert.ok(isKnownAdapterType("chatfire"));
   assert.ok(isConfigurableAdapterType("chatfire"));
-  assert.equal(isConfigurableAdapterType("openai"), false, "openai has no adapter yet");
-  assert.equal(getAdapterFactory("openai"), undefined);
+
+  // C6.7.2.1 + C6.7.2.2 + C6.7.2.3: all three text adapters are registered
+  // as configurable adapter types alongside ChatFire's video adapter.
+  const openai = types.find((t) => t.providerType === "openai");
+  assert.ok(openai, "openai must be a registered adapter type");
+  assert.deepEqual([...openai!.capabilities], ["text"]);
+  assert.ok(getAdapterFactory("openai"));
+  assert.ok(isConfigurableAdapterType("openai"));
+  const gemini = types.find((t) => t.providerType === "google_gemini");
+  assert.ok(gemini, "google_gemini must be a registered adapter type");
+  assert.deepEqual([...gemini!.capabilities], ["text"]);
+  assert.ok(getAdapterFactory("google_gemini"));
+  assert.ok(isConfigurableAdapterType("google_gemini"));
+  const custom = types.find((t) => t.providerType === "custom_openai_compatible");
+  assert.ok(custom, "custom_openai_compatible must be a registered adapter type");
+  assert.deepEqual([...custom!.capabilities], ["text"]);
+  assert.ok(getAdapterFactory("custom_openai_compatible"));
+  assert.ok(isConfigurableAdapterType("custom_openai_compatible"));
+  assert.equal(listAdapterTypes().length, 4, "all four catalog types are configurable now");
 });
 
 test("C6.7.1 Factory - two provider records produce two independent instances", () => {
@@ -486,10 +524,57 @@ test("C6.7.1 Factory - resolveAdapter honours capability and rejects unknown typ
     undefined,
     "chatfire declares video only",
   );
-  assert.equal(
+  assert.ok(
     resolveAdapter({ providerType: "openai", baseUrl: null, apiKeySecret: null }, "text"),
+    "openai resolves for text as of C6.7.2.1",
+  );
+  assert.equal(
+    resolveAdapter({ providerType: "openai", baseUrl: null, apiKeySecret: null }, "image"),
     undefined,
-    "openai has no adapter implementation yet",
+    "openai must not resolve for capabilities it does not implement",
+  );
+  assert.ok(
+    resolveAdapter({ providerType: "google_gemini", baseUrl: null, apiKeySecret: null }, "text"),
+    "google_gemini resolves for text as of C6.7.2.2",
+  );
+  assert.equal(
+    resolveAdapter({ providerType: "google_gemini", baseUrl: null, apiKeySecret: null }, "video"),
+    undefined,
+    "google_gemini must not resolve for capabilities it does not implement",
+  );
+  // The custom OpenAI-compatible adapter (C6.7.2.3) requires an explicit
+  // base URL — a record without one is misconfigured and degrades to "no
+  // usable adapter" rather than resolving to any default host.
+  assert.equal(
+    resolveAdapter(
+      { providerType: "custom_openai_compatible", baseUrl: null, apiKeySecret: null },
+      "text",
+    ),
+    undefined,
+    "no base URL configured: the custom adapter must not resolve",
+  );
+  assert.ok(
+    resolveAdapter(
+      {
+        providerType: "custom_openai_compatible",
+        baseUrl: "https://gateway.test/v1",
+        apiKeySecret: null,
+      },
+      "text",
+    ),
+    "custom_openai_compatible resolves for text with a configured base URL",
+  );
+  assert.equal(
+    resolveAdapter(
+      {
+        providerType: "custom_openai_compatible",
+        baseUrl: "https://gateway.test/v1",
+        apiKeySecret: null,
+      },
+      "image",
+    ),
+    undefined,
+    "custom_openai_compatible must not resolve for capabilities it does not implement",
   );
   assert.equal(
     resolveAdapter({ providerType: "mystery", baseUrl: null, apiKeySecret: null }, "video"),
@@ -644,8 +729,9 @@ test("C6.7.1 Lookup - reserved provider types yield no usable adapter", async ()
     const db = makeFakeDb(stores);
     // An admin could not have created this (validation blocks it), but the
     // lookup must still never hand back an adapter for a type with no
-    // implementation.
-    const providerId = seedProviderRow(stores, "openai");
+    // implementation. No reserved type remains as of C6.7.2.3, so a
+    // fabricated unknown type stands in for the not-implemented case.
+    const providerId = seedProviderRow(stores, "never_implemented_type");
     seedModelRow(stores, providerId, "text", null);
 
     const models = await findModelsForCapability({ db, capability: "text" });
@@ -709,25 +795,31 @@ test("C6.7.1 Admin - /admin/provider-types lists the full architecture", async (
       body.data.map((t) => t.providerType).sort(),
       [...EXPECTED_TYPES].sort(),
     );
-    assert.equal(body.data.filter((t) => t.adapterAvailable).length, 1, "only chatfire today");
+    assert.equal(
+      body.data.filter((t) => t.adapterAvailable).length,
+      4,
+      "all four types are implemented as of C6.7.2.3",
+    );
   } finally {
     teardownDb();
   }
 });
 
-test("C6.7.1 Admin - a reserved provider type cannot be configured", async () => {
+test("C6.7.1 Admin - a provider type without an adapter cannot be configured", async () => {
   const stores = setupDb();
   try {
     const cookie = await adminSession(stores);
+    // No reserved type remains as of C6.7.2.3; a fabricated type exercises
+    // the same not-configurable guard via the unknown-type path.
     const res = await jsonRequest("/api/v1/admin/providers", {
       method: "POST",
       cookie,
-      body: JSON.stringify({ name: "OpenAI", providerType: "openai", apiKey: KEY_A }),
+      body: JSON.stringify({ name: "Mystery Gateway", providerType: "never_implemented_type", apiKey: KEY_A }),
     });
     assert.equal(res.status, 400);
     const body = (await res.json()) as { error: { code: string; message: string } };
     assert.equal(body.error.code, "INVALID_REQUEST");
-    assert.match(body.error.message, /no adapter implementation yet/);
+    assert.match(body.error.message, /not part of the Icooro provider architecture/);
     assert.equal(stores.aiProviders.size, 0, "no provider row may be persisted");
   } finally {
     teardownDb();

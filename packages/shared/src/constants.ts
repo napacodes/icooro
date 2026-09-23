@@ -109,24 +109,23 @@ export const PROVIDER_TYPES: readonly ProviderTypeDescriptor[] = [
   {
     providerType: "openai",
     name: "OpenAI",
-    capabilities: ["text", "image", "audio", "vision"],
-    adapterAvailable: false,
-    description: "OpenAI platform (GPT text, DALL-E image). Adapter lands in a later phase.",
+    capabilities: ["text"],
+    adapterAvailable: true,
+    description: "OpenAI platform (GPT text generation via chat/completions).",
   },
   {
     providerType: "google_gemini",
     name: "Google Gemini",
-    capabilities: ["text", "image", "video", "audio", "vision"],
-    adapterAvailable: false,
-    description: "Google Gemini platform. Adapter lands in a later phase.",
+    capabilities: ["text"],
+    adapterAvailable: true,
+    description: "Google Gemini platform (Gemma/Gemini text generation via generateContent).",
   },
   {
     providerType: "custom_openai_compatible",
     name: "Custom OpenAI-compatible",
     capabilities: ["text"],
-    adapterAvailable: false,
-    description:
-      "Any endpoint speaking the OpenAI-compatible API. Adapter lands in a later phase.",
+    adapterAvailable: true,
+    description: "Any endpoint speaking the OpenAI-compatible chat/completions API.",
   },
   {
     providerType: "chatfire",

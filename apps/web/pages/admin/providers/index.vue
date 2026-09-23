@@ -66,10 +66,10 @@ function openEditForm(provider: AiProvider) {
 
 /**
  * Provider/adapter types the Control Plane can configure. The API returns
- * the whole provider architecture (C6.7.1): the OpenAI, Google Gemini and
- * custom OpenAI-compatible types are listed but flagged `adapterAvailable:
- * false` — their network adapters land in a later phase. They are shown so
- * the roadmap is visible, and disabled so they cannot be selected yet.
+ * the whole provider architecture (C6.7.1). As of C6.7.2.3 every type is
+ * implemented and selectable: ChatFire (C5.1, video), OpenAI (C6.7.2.1),
+ * Google Gemini (C6.7.2.2) and custom OpenAI-compatible (C6.7.2.3, both
+ * text). Types flagged `adapterAvailable: false` would be listed disabled.
  */
 const adapterTypeOptions = computed(() =>
   adapterTypes.value.map((t) => ({

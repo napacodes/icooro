@@ -6,6 +6,7 @@ import type {
   TextProvider,
   VideoProvider,
 } from "./types.js";
+import { ProviderError } from "./types.js";
 import { providerRegistry } from "./registry.js";
 import { hasSecret, providerSecretStore } from "./secrets.js";
 
@@ -170,7 +171,23 @@ export function resolveAdapter(
   const registration = adapterFactories.get(type);
   if (registration) {
     if (!registration.capabilities.includes(capability)) return undefined;
-    return registration.factory(adapterConfigFromRecord(record));
+    // Construction can fail for types whose configuration contract is
+    // stricter than the schema (e.g. the custom OpenAI-compatible adapter
+    // requires a base URL). A misconfigured record then degrades to "no
+    // usable adapter" — the same philosophy as safeRevealApiKey above —
+    // instead of throwing out of resolution.
+    try {
+      return registration.factory(adapterConfigFromRecord(record));
+    } catch (err) {
+      // Configuration-invalid records (stricter per-type constructor
+      // contracts than the schema enforces, e.g. the custom
+      // OpenAI-compatible adapter's required base URL) degrade to "no
+      // usable adapter" — the same philosophy as safeRevealApiKey above.
+      // Anything else is a programmer bug or invariant violation and must
+      // stay loud rather than masquerade as a missing adapter.
+      if (!(err instanceof ProviderError)) throw err;
+      return undefined;
+    }
   }
 
   // Fallback: process-wide registry singleton (mock/dev adapters and any

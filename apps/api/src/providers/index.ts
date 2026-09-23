@@ -1,12 +1,18 @@
 import { providerRegistry } from "./registry.js";
 import { mockMediaProvider } from "./mock.js";
 import { ChatFireVideoProvider, chatfireVideoProvider } from "./chatfire.js";
+import { OpenAITextProvider } from "./openai.js";
+import { GeminiTextProvider } from "./gemini.js";
+import { CustomOpenAICompatibleTextProvider } from "./custom_openai_compatible.js";
 import { registerAdapterFactory } from "./factory.js";
 
 export * from "./types.js";
 export * from "./registry.js";
 export * from "./mock.js";
 export * from "./chatfire.js";
+export * from "./openai.js";
+export * from "./gemini.js";
+export * from "./custom_openai_compatible.js";
 export * from "./secrets.js";
 export * from "./factory.js";
 export * from "./dto.js";
@@ -41,13 +47,30 @@ providerRegistry.register(chatfireVideoProvider);
 // record of one of these types resolves to a fresh, record-configured
 // adapter instance carrying that record's base URL and unsealed API key.
 //
-// Only types whose network adapter is actually implemented are registered
-// here — the OpenAI / Gemini / custom-OpenAI-compatible adapters land in a
-// later phase and are therefore *not* constructible yet, even though they
-// are already part of the provider-type catalog (see types_catalog.ts).
+// All four catalog types now have adapters: ChatFire (C5.1), OpenAI text
+// (C6.7.2.1), Google Gemini text (C6.7.2.2), and the custom
+// OpenAI-compatible text adapter (C6.7.2.3).
 registerAdapterFactory(
   "chatfire",
   "ChatFire Seedance 2.5",
   ["video"],
   (config) => new ChatFireVideoProvider(config),
+);
+registerAdapterFactory(
+  "openai",
+  "OpenAI",
+  ["text"],
+  (config) => new OpenAITextProvider(config),
+);
+registerAdapterFactory(
+  "google_gemini",
+  "Google Gemini",
+  ["text"],
+  (config) => new GeminiTextProvider(config),
+);
+registerAdapterFactory(
+  "custom_openai_compatible",
+  "Custom OpenAI-compatible",
+  ["text"],
+  (config) => new CustomOpenAICompatibleTextProvider(config),
 );

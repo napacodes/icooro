@@ -31,6 +31,7 @@ import {
   getAdapterFactory,
   isKnownAdapterType,
   listAdapterTypes,
+  registerAdapterFactory,
   resolveAdapter,
   resolveVideoProvider,
 } from "../src/providers/factory.js";
@@ -39,6 +40,7 @@ import {
   maskSecret,
   providerSecretStore,
 } from "../src/providers/secrets.js";
+import { ProviderError } from "../src/providers/types.js";
 import type { ChatFireVideoProvider } from "../src/providers/chatfire.js";
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1032,60 @@ test("C6.3 Adapter factory - resolveAdapter honours capability and unknown types
     resolveAdapter({ providerType: "unknown", baseUrl: null, apiKeySecret: null }, "video"),
     undefined,
     "unknown type must not resolve",
+  );
+});
+
+test("C6.7.2.3 Factory - constructor failures: config errors degrade, bugs propagate", () => {
+  // Scratch types registered only for this assertion set; they use unique
+  // names so no real provider type is affected.
+  registerAdapterFactory(
+    "factory_test_config_boom",
+    "Factory Test Config Boom",
+    ["text"],
+    () => {
+      // Configuration-invalid record: the adapter's own contract rejected it.
+      throw new ProviderError("bad provider configuration", {
+        provider: "factory_test_config_boom",
+      });
+    },
+  );
+  registerAdapterFactory(
+    "factory_test_bug_boom",
+    "Factory Test Bug Boom",
+    ["text"],
+    () => {
+      // Programmer bug / invariant violation: NOT a ProviderError.
+      throw new TypeError("programmer bug in adapter constructor");
+    },
+  );
+
+  const configRow = {
+    providerType: "factory_test_config_boom",
+    baseUrl: null,
+    apiKeySecret: null,
+  };
+  const bugRow = {
+    providerType: "factory_test_bug_boom",
+    baseUrl: null,
+    apiKeySecret: null,
+  };
+
+  // Config errors degrade to the documented "no usable adapter" outcome.
+  assert.equal(
+    resolveAdapter(configRow, "text"),
+    undefined,
+    "a ProviderError from construction must yield undefined, not throw",
+  );
+
+  // Anything else stays loud so bugs surface at their true location.
+  assert.throws(
+    () => resolveAdapter(bugRow, "text"),
+    (err: unknown) => {
+      assert.ok(err instanceof TypeError);
+      assert.match(err.message, /programmer bug in adapter constructor/);
+      return true;
+    },
+    "non-ProviderError constructor failures must propagate",
   );
 });
 
