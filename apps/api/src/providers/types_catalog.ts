@@ -85,6 +85,39 @@ export function providerTypeLabel(providerType: string): string {
 }
 
 /**
+ * Per-type provider configuration validation (C6.8.3a).
+ *
+ * The admin schema accepts a record for any adaptable type, but a few adapter
+ * types have stricter construction contracts than a body-only schema can
+ * express: the custom OpenAI-compatible adapter has NO default host of any
+ * kind, so its base URL is required. This is the single reusable check the
+ * create and update routes run so a record that could never construct a
+ * usable adapter is rejected at the API boundary instead of degrading
+ * silently to "no usable adapter" at generation time.
+ *
+ * Returns `null` when the configuration is acceptable, otherwise a clear
+ * human-readable message for the 400 response. Future per-type requirements
+ * belong in this function — keep it the only place that knows which fields
+ * each provider type requires.
+ */
+const TYPES_REQUIRING_BASE_URL: ReadonlySet<string> = new Set(["custom_openai_compatible"]);
+
+export function providerConfigProblem(
+  providerType: string,
+  baseUrl: string | null | undefined,
+): string | null {
+  const type = (providerType ?? "").toLowerCase();
+  if (TYPES_REQUIRING_BASE_URL.has(type) && (baseUrl?.trim() ?? "") === "") {
+    return `A base URL is required for the "${type}" provider type — configure the gateway endpoint on the provider record.`;
+  }
+  // chatfire / openai / google_gemini construct with vendor defaults (and
+  // ChatFire additionally falls back to env), so they have no required
+  // fields today. apiKey is deliberately never required here: the adapters'
+  // environment fallback is an established contract.
+  return null;
+}
+
+/**
  * Reason a provider record of this type cannot currently be used, or `null`
  * when it is usable. The only unusable-by-design case today is a type whose
  * adapter has not landed yet.

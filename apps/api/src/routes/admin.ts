@@ -8,7 +8,7 @@ import { aiModels } from "../db/schema/ai_models.js";
 import { aiJobs } from "../db/schema/ai_jobs.js";
 import { requireAdmin, sessionMiddleware } from "../middleware/session.js";
 import { providerSecretStore } from "../providers/secrets.js";
-import { isAdaptableProviderType, isKnownProviderType, listProviderTypes } from "../providers/types_catalog.js";
+import { isAdaptableProviderType, isKnownProviderType, listProviderTypes, providerConfigProblem } from "../providers/types_catalog.js";
 import { toModelDto, toProviderDto } from "../providers/dto.js";
 import { generationJobService } from "../services/generation.js";
 import {
@@ -353,6 +353,15 @@ adminRoute.post("/providers", async (c) => {
     );
   }
 
+  // C6.8.3a: per-type configuration requirements (e.g. the custom
+  // OpenAI-compatible type must carry a base URL — its adapter has no
+  // default host). Reject at the boundary rather than persisting a record
+  // that could never construct a usable adapter.
+  const configProblem = providerConfigProblem(parsed.data.providerType, parsed.data.baseUrl);
+  if (configProblem) {
+    return c.json(bad(configProblem, 400), 400);
+  }
+
   try {
     const db = getDb();
 
@@ -413,6 +422,17 @@ adminRoute.patch("/providers/:id", async (c) => {
     const [existing] = await db.select().from(aiProviders).where(eq(aiProviders.id, id));
     if (!existing) {
       return c.json(bad("Provider not found", 404), 404);
+    }
+
+    // C6.8.3a: validate the *effective* configuration after the patch — the
+    // patch's baseUrl when present, otherwise the stored one — using the
+    // record's existing (immutable) type. This blocks stripping the base
+    // URL from a type that requires it while leaving unrelated patches
+    // (e.g. a name change) untouched.
+    const effectiveBaseUrl = "baseUrl" in parsed.data ? parsed.data.baseUrl : (existing.baseUrl as string | null | undefined);
+    const configProblem = providerConfigProblem(existing.providerType, effectiveBaseUrl);
+    if (configProblem) {
+      return c.json(bad(configProblem, 400), 400);
     }
 
     // apiKey is write-only: present means rotate, absent means keep as-is.

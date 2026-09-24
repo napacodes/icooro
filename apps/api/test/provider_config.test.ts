@@ -1591,3 +1591,220 @@ test("C6.8.2 Routing - partial provider/model selection is never auto-filled", a
     teardownDb();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 7d. C6.8.3a — per-type provider configuration validation
+// ---------------------------------------------------------------------------
+
+const CUSTOM_REQUIRED_MSG =
+  'A base URL is required for the "custom_openai_compatible" provider type — configure the gateway endpoint on the provider record.';
+
+async function seedCustomProvider(
+  stores: Stores,
+  cookie: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return seedChatFireProvider(stores, cookie, {
+    providerType: "custom_openai_compatible",
+    baseUrl: "https://gateway.example.internal/v1",
+    ...overrides,
+  });
+}
+
+function createProviderBody(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    name: `Custom GW #${++providerSeedCounter}`,
+    providerType: "custom_openai_compatible",
+    baseUrl: "https://gateway.example.internal/v1",
+    ...overrides,
+  });
+}
+
+test("C6.8.3a Config - custom provider without baseUrl is rejected at create", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const res = await jsonRequest("/api/v1/admin/providers", {
+      method: "POST",
+      cookie,
+      body: createProviderBody({ baseUrl: null }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(((await res.json()) as { error: { message: string } }).error.message, CUSTOM_REQUIRED_MSG);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - whitespace-only baseUrl is rejected at create", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const res = await jsonRequest("/api/v1/admin/providers", {
+      method: "POST",
+      cookie,
+      body: createProviderBody({ baseUrl: "   ", apiKey: RAW_KEY }),
+    });
+    assert.equal(res.status, 400);
+    // Whitespace-only can be caught by the schema (trim+url) before the
+    // route validator runs; both layers are 400 rejections.
+    const message = ((await res.json()) as { error: { message: string } }).error.message;
+    assert.ok(
+      message === "baseUrl must be a valid URL" || message === CUSTOM_REQUIRED_MSG,
+      `unexpected rejection message: ${message}`,
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - custom provider with valid baseUrl is created successfully", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const res = await jsonRequest("/api/v1/admin/providers", {
+      method: "POST",
+      cookie,
+      body: createProviderBody({ apiKey: RAW_KEY }),
+    });
+    assert.equal(res.status, 201);
+    const body = (await res.json()) as { data: any };
+    assert.equal(body.data.providerType, "custom_openai_compatible");
+    assert.equal(body.data.baseUrl, "https://gateway.example.internal/v1");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - update stripping baseUrl to null is rejected", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const { id } = await seedCustomProvider(stores, cookie);
+    const res = await jsonRequest(`/api/v1/admin/providers/${id}`, {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ baseUrl: null }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(((await res.json()) as { error: { message: string } }).error.message, CUSTOM_REQUIRED_MSG);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - update stripping baseUrl to whitespace is rejected", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const { id } = await seedCustomProvider(stores, cookie);
+    const res = await jsonRequest(`/api/v1/admin/providers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ baseUrl: "  " }),
+      cookie,
+    });
+    assert.equal(res.status, 400);
+    // Same either-layer rejection as the create case.
+    const message = ((await res.json()) as { error: { message: string } }).error.message;
+    assert.ok(
+      message === "baseUrl must be a valid URL" || message === CUSTOM_REQUIRED_MSG,
+      `unexpected rejection message: ${message}`,
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - name-only update keeps a valid custom provider valid", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const { id, row } = await seedCustomProvider(stores, cookie);
+    const res = await jsonRequest(`/api/v1/admin/providers/${id}`, {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ name: "Renamed Gateway" }),
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { data: any };
+    assert.equal(body.data.name, "Renamed Gateway");
+    assert.equal(body.data.baseUrl, "https://gateway.example.internal/v1");
+    assert.equal(row!.baseUrl, "https://gateway.example.internal/v1");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - openai without baseUrl remains valid", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const res = await jsonRequest("/api/v1/admin/providers", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ name: "OpenAI Direct", providerType: "openai" }),
+    });
+    assert.equal(res.status, 201);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - google_gemini without baseUrl remains valid", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const res = await jsonRequest("/api/v1/admin/providers", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ name: "Gemini Direct", providerType: "google_gemini" }),
+    });
+    assert.equal(res.status, 201);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - chatfire without baseUrl remains valid (env/default fallback)", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const res = await jsonRequest("/api/v1/admin/providers", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ name: "ChatFire Bare", providerType: "chatfire" }),
+    });
+    assert.equal(res.status, 201);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3a Config - apiKey remains optional for every adaptable type", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const bodies = [
+      { name: "OpenAI Keyless", providerType: "openai" },
+      { name: "Gemini Keyless", providerType: "google_gemini" },
+      {
+        name: "Custom Keyless",
+        providerType: "custom_openai_compatible",
+        baseUrl: "https://gateway.example.internal/v1",
+      },
+      { name: "ChatFire Keyless", providerType: "chatfire" },
+    ];
+    for (const body of bodies) {
+      const res = await jsonRequest("/api/v1/admin/providers", {
+        method: "POST",
+        cookie,
+        body: JSON.stringify(body),
+      });
+      assert.equal(res.status, 201, `keyless ${body.providerType} must still be accepted`);
+      const data = ((await res.json()) as { data: any }).data;
+      assert.equal(data.hasApiKey, false);
+    }
+  } finally {
+    teardownDb();
+  }
+});
