@@ -35,6 +35,7 @@ import {
   generationJobsRoute,
   nestedGenerationJobsRoute,
 } from "./routes/generation.js";
+import { nestedProductionPlansRoute } from "./routes/production_plan.js";
 import { authRoute } from "./routes/auth.js";
 import { adminRoute } from "./routes/admin.js";
 import { sessionMiddleware, requireUser } from "./middleware/session.js";
@@ -152,6 +153,7 @@ app.route("/api/v1", nestedStorytellingRoute);
 app.route("/api/v1", nestedAssetsRoute);
 app.route("/api/v1", nestedShotAssetsRoute);
 app.route("/api/v1", nestedGenerationJobsRoute);
+app.route("/api/v1", nestedProductionPlansRoute);
 
 // Only start the HTTP listener if this file is run directly
 if (process.env.NODE_ENV !== "test" && !process.env.ICOORO_API_DISABLE_LISTENER) {

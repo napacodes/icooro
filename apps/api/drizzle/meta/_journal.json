@@ -43,6 +43,13 @@
       "when": 1790000688414,
       "tag": "0005_handy_leper_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790252992169,
+      "tag": "0006_flippant_deathstrike",
+      "breakpoints": true
     }
   ]
 }

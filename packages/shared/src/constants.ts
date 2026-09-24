@@ -147,3 +147,41 @@ export function isProviderType(value: unknown): value is ProviderType {
 export function describeProviderType(providerType: string): ProviderTypeDescriptor | undefined {
   return PROVIDER_TYPES.find((t) => t.providerType === providerType.toLowerCase());
 }
+
+// ---------------------------------------------------------------------------
+// C7.1 — AI Production Director foundation
+// ---------------------------------------------------------------------------
+
+/**
+ * Lifecycle of an AI Production Director run (C7.1).
+ *
+ * A ProductionPlan is the persistent, reviewable record of an AI-assisted
+ * production request: the user's instruction goes in, a structured plan
+ * comes out, the user reviews/edits it, and — once approved — later C7
+ * phases may orchestrate the EXISTING domain entities (episodes, scenes,
+ * shots, generation jobs) from it. The plan never duplicates those
+ * entities; it only references them.
+ *
+ * Statuses follow the existing lowercase word conventions (cf.
+ * ASSET_LIFECYCLE_STATUSES, JOB_STATUSES):
+ *
+ *   planning → ready_for_review → approved
+ *        \          |               ^|
+ *         \         v               || (edits return it to planning)
+ *          \\-----> cancelled      ///
+ *           \                    //
+ *            v                  v
+ *                     failed
+ *
+ * `planning` and `ready_for_review` may edit their plan payload freely.
+ * `approved`, `cancelled` and `failed` are terminal — a new plan is created
+ * for another run rather than resurrecting a finished one.
+ */
+export const PRODUCTION_PLAN_STATUSES = [
+  "planning",
+  "ready_for_review",
+  "approved",
+  "cancelled",
+  "failed",
+] as const;
+export type ProductionPlanStatus = (typeof PRODUCTION_PLAN_STATUSES)[number];

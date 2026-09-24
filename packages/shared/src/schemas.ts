@@ -5,11 +5,13 @@ import {
   JOB_STATUSES,
   MEDIA_TYPES,
   PROVIDER_CAPABILITIES,
+  PRODUCTION_PLAN_STATUSES,
   SHOT_ASSET_ROLES,
   SOURCE_KINDS,
   USER_ROLES,
   type GenerationJobType,
   type ProviderCapability,
+  type ProductionPlanStatus,
 } from "./constants.js";
 
 // ---------------------------------------------------------------------------
@@ -319,3 +321,40 @@ export const JOB_TYPE_CAPABILITY: Readonly<Record<GenerationJobType, ProviderCap
   "text-to-video": "video",
   "text-to-audio": "audio",
 };
+
+// ---------------------------------------------------------------------------
+// C7.1 — AI Production Director foundation
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a ProductionPlan (C7.1): record the user's high-level production
+ * request as a local draft. No AI/provider call happens at this stage —
+ * planning itself is a later phase.
+ */
+export const createProductionPlanSchema = z.object({
+  /** The user's verbatim request, e.g. "Make a 30-second Mozytoon episode about colors". */
+  request: z.string().trim().min(1, "request is required").max(4000),
+  /** Optional target episode the plan is anchored to. Must belong to the project. */
+  episodeId: z.string().trim().length(36).nullable().optional(),
+  /** Optional free-form preferences (tone, audience, constraints...) for later planning phases. */
+  preferences: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+export type ProductionPlanCreateInput = z.infer<typeof createProductionPlanSchema>;
+
+/**
+ * Update a ProductionPlan. Two disjoint kinds of change are possible:
+ * plan-payload edits (plan, targetDurationSeconds) while the plan is
+ * editable, and explicit status transitions.
+ */
+export const updateProductionPlanSchema = z
+  .object({
+  /** The editable structured plan payload produced by a later planning phase. */
+  plan: z.record(z.string(), z.unknown()).nullable().optional(),
+  /** Target duration in seconds the user asked for, when known. */
+  targetDurationSeconds: z.number().int().positive().max(3600).nullable().optional(),
+  status: z.enum(PRODUCTION_PLAN_STATUSES).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field (plan, targetDurationSeconds, or status) is required for update",
+  });
+export type ProductionPlanUpdateInput = z.infer<typeof updateProductionPlanSchema>;
