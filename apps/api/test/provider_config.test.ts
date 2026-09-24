@@ -1002,6 +1002,165 @@ test("C6.3 Generation - model must belong to the provider and match the media ty
 });
 
 // ---------------------------------------------------------------------------
+// 7b. C6.8.1 — model jobTypes enforcement at generation-job creation
+// ---------------------------------------------------------------------------
+
+test("C6.8.1 Generation - model with declared jobTypes accepts a compatible job type", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    const model = await seedModel(cookie, provider.id); // jobTypes: ["text-to-video"]
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "a quiet harbor at dawn",
+        targetMediaType: "video",
+        jobType: "text-to-video",
+        providerId: provider.id,
+        modelId: model.body.data.id,
+      }),
+    });
+    assert.equal(res.status, 201);
+    const created = (await res.json()) as { data: any };
+    assert.equal(created.data.modelId, model.body.data.id);
+    assert.equal(created.data.status, "queued");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.1 Generation - model rejects a job type outside its declared jobTypes", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // A cross-capability declared list is schema-legal (enum-level validation
+    // only); the capability branch of the check fires first here, and the
+    // declared-list branch alone is covered in the next test.
+    const model = await seedModel(cookie, provider.id, {
+      jobTypes: ["text-to-video", "text-to-image"],
+    });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "x",
+        targetMediaType: "video",
+        jobType: "text-to-image",
+        providerId: provider.id,
+        modelId: model.body.data.id,
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'Model does not support the "text-to-image" job type',
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.1 Generation - model rejects a job type excluded from its declared jobTypes even when the capability matches", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // Schema-legal list that excludes the model's own capability's job type,
+    // so the declared-jobTypes check (not the capability check) is what
+    // rejects the request.
+    const model = await seedModel(cookie, provider.id, {
+      jobTypes: ["text-to-image"],
+    });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "x",
+        targetMediaType: "video",
+        jobType: "text-to-video",
+        providerId: provider.id,
+        modelId: model.body.data.id,
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'Model does not support the "text-to-video" job type',
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.1 Generation - model with null jobTypes remains unrestricted", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // No declared jobTypes (null) = any job type for the model's capability.
+    // An empty list would normalize to the same by normalizeJobTypes.
+    const model = await seedModel(cookie, provider.id, { jobTypes: null });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "x",
+        targetMediaType: "video",
+        jobType: "text-to-video",
+        providerId: provider.id,
+        modelId: model.body.data.id,
+      }),
+    });
+    assert.equal(res.status, 201);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.1 Generation - jobType whose capability differs from the model is rejected", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // Capability "video" (null jobTypes) vs job type "text-to-image" (image):
+    // the capability mismatch must be caught even with no declared job types.
+    // targetMediaType is omitted so the pre-existing media-type check does not
+    // fire first and this isolates the JOB_TYPE_CAPABILITY branch.
+    const model = await seedModel(cookie, provider.id, { jobTypes: null });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "x",
+        jobType: "text-to-image",
+        providerId: provider.id,
+        modelId: model.body.data.id,
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'Model does not support the "text-to-image" job type',
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 8. Adapter factory + ChatFire resolution through the configured provider
 // ---------------------------------------------------------------------------
 
@@ -1135,6 +1294,300 @@ test("C6.3 ChatFire - a configured provider record resolves to a working ChatFir
     if (originalKey !== undefined) {
       process.env.CHATFIRE_API_KEY = originalKey;
     }
+    teardownDb();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 7c. C6.8.2 — minimal automatic model routing at generation-job creation
+// ---------------------------------------------------------------------------
+
+test("C6.8.2 Routing - omitted provider/model auto-selects the earliest eligible model", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // Unique (providerId, modelId) pairs: the provider+model pair is unique.
+    const first = await seedModel(cookie, provider.id, {
+      name: "First Model",
+      modelId: "first-model-1",
+      jobTypes: null,
+    });
+    const second = await seedModel(cookie, provider.id, {
+      name: "Second Model",
+      modelId: "second-model-1",
+      jobTypes: null,
+    });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "x",
+        targetMediaType: "video",
+        jobType: "text-to-video",
+      }),
+    });
+    assert.equal(res.status, 201);
+    const created = (await res.json()) as { data: any };
+    // Deterministic selection: createdAt ascending — the earliest-configured
+    // eligible model wins (stable sort keeps insertion order on a tie).
+    assert.equal(created.data.providerId, provider.id);
+    assert.equal(created.data.modelId, first.body.data.id);
+    assert.notEqual(created.data.modelId, second.body.data.id);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - a model on a disabled provider is ignored", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    await seedModel(cookie, provider.id, { jobTypes: null });
+    const projectId = await seedProject(stores, cookie);
+
+    await jsonRequest(`/api/v1/admin/providers/${provider.id}`, {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'No enabled model configured for "text-to-video"',
+    );
+    assert.equal(stores.aiJobs.size, 0, "no unbound job may be created");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - a disabled model is ignored", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    const model = await seedModel(cookie, provider.id, { jobTypes: null });
+    const projectId = await seedProject(stores, cookie);
+
+    await jsonRequest(`/api/v1/admin/models/${model.body.data.id}`, {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'No enabled model configured for "text-to-video"',
+    );
+    assert.equal(stores.aiJobs.size, 0, "no unbound job may be created");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - a model with matching declared jobTypes is auto-selected", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    const model = await seedModel(cookie, provider.id); // jobTypes: ["text-to-video"]
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 201);
+    const created = (await res.json()) as { data: any };
+    assert.equal(created.data.providerId, provider.id);
+    assert.equal(created.data.modelId, model.body.data.id);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - a model excluding the job type from its declared jobTypes is ignored", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // Schema-legal list that excludes the requested job type.
+    await seedModel(cookie, provider.id, { jobTypes: ["text-to-image"] });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'No enabled model configured for "text-to-video"',
+    );
+    assert.equal(stores.aiJobs.size, 0, "no unbound job may be created");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - null jobTypes remains unrestricted during auto-selection", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    const model = await seedModel(cookie, provider.id, { jobTypes: null });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 201);
+    const created = (await res.json()) as { data: any };
+    assert.equal(created.data.modelId, model.body.data.id);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - empty jobTypes normalizes to unrestricted during auto-selection", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    const model = await seedModel(cookie, provider.id, { jobTypes: [] });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 201);
+    const created = (await res.json()) as { data: any };
+    assert.equal(created.data.modelId, model.body.data.id);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - no eligible model returns HTTP 400 and creates no job", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    await seedChatFireProvider(stores, cookie); // provider exists, no models
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", targetMediaType: "video", jobType: "text-to-video" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(
+      ((await res.json()) as { error: { message: string } }).error.message,
+      'No enabled model configured for "text-to-video"',
+    );
+    assert.equal(stores.aiJobs.size, 0, "no unbound job may be created");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - explicit provider/model selection is unchanged and beats auto-selection", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // Two eligible models exist; the explicit selection must bind the one
+    // the caller chose, not the auto-selection's earliest.
+    await seedModel(cookie, provider.id, {
+      name: "Earliest Model",
+      modelId: "earliest-model-1",
+      jobTypes: null,
+    });
+    const explicit = await seedModel(cookie, provider.id, {
+      name: "Chosen Model",
+      modelId: "chosen-model-1",
+      jobTypes: null,
+    });
+    const projectId = await seedProject(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({
+        prompt: "x",
+        targetMediaType: "video",
+        jobType: "text-to-video",
+        providerId: provider.id,
+        modelId: explicit.body.data.id,
+      }),
+    });
+    assert.equal(res.status, 201);
+    const created = (await res.json()) as { data: any };
+    assert.equal(created.data.providerId, provider.id);
+    assert.equal(created.data.modelId, explicit.body.data.id);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.2 Routing - partial provider/model selection is never auto-filled", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const provider = await seedChatFireProvider(stores, cookie);
+    // An eligible model exists, so a provider-only submission would get one
+    // auto-filled if the implementation were wrong. It must stay null.
+    await seedModel(cookie, provider.id, { jobTypes: null });
+    const projectId = await seedProject(stores, cookie);
+
+    // providerId only → existing behavior: job created with null modelId.
+    const providerOnly = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", jobType: "text-to-video", providerId: provider.id }),
+    });
+    assert.equal(providerOnly.status, 201);
+    const pOnly = (await providerOnly.json()) as { data: any };
+    assert.equal(pOnly.data.providerId, provider.id);
+    assert.equal(pOnly.data.modelId, null);
+
+    // modelId only → existing behavior: job created with null providerId.
+    const model = await seedModel(cookie, provider.id, {
+      name: "Model Only",
+      modelId: "model-only-1",
+    });
+    const modelOnly = await jsonRequest(`/api/v1/projects/${projectId}/jobs`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ prompt: "x", jobType: "text-to-video", modelId: model.body.data.id }),
+    });
+    assert.equal(modelOnly.status, 201);
+    const mOnly = (await modelOnly.json()) as { data: any };
+    assert.equal(mOnly.data.providerId, null);
+    assert.equal(mOnly.data.modelId, model.body.data.id);
+  } finally {
     teardownDb();
   }
 });

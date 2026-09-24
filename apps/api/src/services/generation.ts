@@ -12,6 +12,11 @@ import { assetVersions } from "../db/schema/asset_versions.js";
 import type { GenerationJobStatus } from "../providers/types.js";
 import { providerRegistry } from "../providers/registry.js";
 import { resolveAdapter } from "../providers/factory.js";
+import {
+  findModelsForCapability,
+  normalizeJobTypes,
+} from "../providers/capabilities.js";
+import { JOB_TYPE_CAPABILITY, type GenerationJobType } from "@icooro/shared";
 
 /**
  * Thrown by `completeJobWithAssetVersion` when a concurrent caller has
@@ -150,6 +155,7 @@ export class GenerationJobService {
           providerId: aiModels.providerId,
           enabled: aiModels.enabled,
           capability: aiModels.capability,
+          jobTypes: aiModels.jobTypes,
         })
         .from(aiModels)
         .where(eq(aiModels.id, input.modelId));
@@ -161,9 +167,57 @@ export class GenerationJobService {
       if (input.targetMediaType && model.capability !== input.targetMediaType) {
         return "Model does not support the requested media type";
       }
+
+      // C6.8.1: the job's type must map to the model's capability, and when
+      // the model declares explicit job types the requested one must be one
+      // of them. A model with no declared jobTypes (null, or an empty list
+      // per normalizeJobTypes) remains unrestricted for its capability.
+      const expectedCapability = JOB_TYPE_CAPABILITY[input.jobType as GenerationJobType];
+      if (expectedCapability && model.capability !== expectedCapability) {
+        return `Model does not support the "${input.jobType}" job type`;
+      }
+      const declaredJobTypes = normalizeJobTypes(model.jobTypes);
+      if (declaredJobTypes !== null && !declaredJobTypes.includes(input.jobType)) {
+        return `Model does not support the "${input.jobType}" job type`;
+      }
     }
 
     return null;
+  }
+
+  /**
+   * C6.8.2 minimal automatic routing: resolve the model a job should use
+   * when the caller supplied neither providerId nor modelId.
+   *
+   * Eligibility reuses the C6.7.1 capability lookup exactly (`findModelsForCapability`):
+   * enabled model bound to an enabled provider, capability equal to
+   * `JOB_TYPE_CAPABILITY[jobType]`, and — when the model declares jobTypes —
+   * the requested job type must be included (null/empty jobTypes stays
+   * unrestricted per the existing `normalizeJobTypes` semantics).
+   *
+   * Deterministic ordering: createdAt ascending, earliest-configured model
+   * first (ISO timestamps compare lexicographically). No scoring, no failover.
+   *
+   * Returns the selected pair, or `null` when no eligible model exists.
+   */
+  private async autoSelectModel(
+    input: CreateGenerationJobInput,
+  ): Promise<{ providerId: string; modelId: string } | null> {
+    const capability = JOB_TYPE_CAPABILITY[input.jobType as GenerationJobType];
+    if (!capability) return null; // unknown job type: nothing to route to
+
+    const candidates = await findModelsForCapability({
+      db: getDb(),
+      capability,
+      jobType: input.jobType,
+    });
+    if (candidates.length === 0) return null;
+
+    const chosen = candidates
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))[0];
+    if (!chosen) return null;
+    return { providerId: chosen.providerId, modelId: chosen.id };
   }
 
   async createJob(input: CreateGenerationJobInput) {
@@ -172,13 +226,28 @@ export class GenerationJobService {
       throw new Error(error);
     }
 
+    // C6.8.2: automatic model routing. With no explicit provider/model the
+    // job is bound to the deterministic default (autoSelectModel). Explicit
+    // selections are never auto-filled; a partial selection (only one of the
+    // two) keeps the existing validation contract unchanged.
+    let providerId = input.providerId ?? null;
+    let modelId = input.modelId ?? null;
+    if (providerId === null && modelId === null) {
+      const selected = await this.autoSelectModel(input);
+      if (!selected) {
+        throw new Error(`No enabled model configured for "${input.jobType}"`);
+      }
+      providerId = selected.providerId;
+      modelId = selected.modelId;
+    }
+
     const db = getDb();
     const values = {
       projectId: input.projectId,
       jobType: input.jobType,
       status: "queued" as const,
-      providerId: input.providerId ?? null,
-      modelId: input.modelId ?? null,
+      providerId,
+      modelId,
       episodeId: input.episodeId ?? null,
       sceneId: input.sceneId ?? null,
       shotId: input.shotId ?? null,

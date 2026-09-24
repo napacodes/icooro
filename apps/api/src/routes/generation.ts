@@ -140,7 +140,11 @@ nestedGenerationJobsRoute.post("/projects/:projectId/jobs", async (c) => {
     }
     if (
       error.message.includes("does not belong") ||
-      error.message.includes("does not support the requested media type")
+      error.message.includes("does not support the requested media type") ||
+      // C6.8.1: job-type/capability or model-declared jobTypes mismatch.
+      error.message.includes('does not support the "') ||
+      // C6.8.2: automatic routing found no eligible model for the job type.
+      error.message.startsWith("No enabled model configured for ")
     ) {
       return c.json(bad(error.message, 400), 400);
     }
