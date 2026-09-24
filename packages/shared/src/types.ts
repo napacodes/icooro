@@ -191,6 +191,14 @@ export interface AiProvider {
   apiKeyMasked?: string | null;
   /** True when an API key is stored for this provider. */
   hasApiKey?: boolean;
+  /**
+   * Local configuration health (C6.8.3b). `null` means the record satisfies
+   * its provider type's configuration requirements; non-null is a human
+   * readable description of the local configuration problem (the same
+   * message the create/update routes reject with). Purely local — never a
+   * network probe, and it never carries secret material.
+   */
+  configProblem?: string | null;
   config?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;

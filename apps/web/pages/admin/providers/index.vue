@@ -242,6 +242,11 @@ onMounted(() => {
               <span class="status-badge" :class="p.enabled ? 'enabled' : 'disabled'">
                 {{ p.enabled ? 'Active' : 'Disabled' }}
               </span>
+              <span
+                v-if="p.configProblem"
+                class="status-badge config-invalid"
+                :title="p.configProblem"
+              >Invalid config</span>
             </td>
             <td>{{ new Date(p.createdAt).toLocaleString() }}</td>
             <td>
@@ -546,6 +551,13 @@ code {
   background: #212529;
   color: #8b949e;
   border: 1px solid #37474f;
+}
+.status-badge.config-invalid {
+  background: #2e1a1a;
+  color: #ef9a9a;
+  border: 1px solid #c62828;
+  margin-left: 0.35rem;
+  text-transform: none;
 }
 .action-group {
   display: flex;

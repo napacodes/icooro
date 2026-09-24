@@ -1,5 +1,6 @@
 import { ProviderRegistry } from "./registry.js";
 import { hasSecret, maskSecret } from "./secrets.js";
+import { providerConfigProblem } from "./types_catalog.js";
 
 /**
  * Serialization of AI provider / model rows into API response shapes.
@@ -21,6 +22,14 @@ export interface ProviderDto {
   baseUrl: string | null;
   hasApiKey: boolean;
   apiKeyMasked: string | null;
+  /**
+   * Local configuration health (C6.8.3b): `null` when the record satisfies
+   * its type's configuration requirements, otherwise the same message the
+   * create/update routes reject with. Computed solely by the shared
+   * providerConfigProblem() validator — no rules are duplicated here, and
+   * no network call or adapter construction takes place.
+   */
+  configProblem: string | null;
   config: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
@@ -42,6 +51,10 @@ export function toProviderDto(row: Record<string, unknown>): ProviderDto {
     baseUrl: (row.baseUrl as string | null | undefined) ?? null,
     hasApiKey: hasSecret(row.apiKeySecret as string | null | undefined),
     apiKeyMasked: maskSecret(row.apiKeySecret as string | null | undefined),
+    configProblem: providerConfigProblem(
+      row.providerType as string,
+      row.baseUrl as string | null | undefined,
+    ),
     config: sanitizedConfig ?? null,
     createdAt: toDate(row.createdAt),
     updatedAt: toDate(row.updatedAt),

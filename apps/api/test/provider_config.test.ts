@@ -1808,3 +1808,152 @@ test("C6.8.3a Config - apiKey remains optional for every adaptable type", async 
     teardownDb();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 7e. C6.8.3b — local provider configuration health on the provider DTO
+// ---------------------------------------------------------------------------
+
+const LEGACY_SECRET = "sk-legacy-credential-never-expose-9876543210";
+
+/**
+ * Seeds a pre-C6.8.3a "legacy" row directly into the store: the API now
+ * rejects creating such a record (C6.8.3a), which is exactly why the health
+ * surface matters — it makes previously persisted misconfigurations visible
+ * without any retrofitting.
+ */
+function seedLegacyCustomProvider(stores: Stores, overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  stores.aiProviders.set(id, {
+    id,
+    name: "Legacy Custom GW",
+    providerType: "custom_openai_compatible",
+    enabled: true,
+    baseUrl: null, // the misconfiguration itself
+    apiKeySecret: LEGACY_SECRET,
+    config: null,
+    ...overrides,
+  });
+  return id;
+}
+
+test("C6.8.3b Health - a valid provider reports configProblem null", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    await seedCustomProvider(stores, cookie);
+
+    const res = await jsonRequest("/api/v1/admin/providers", { cookie });
+    assert.equal(res.status, 200);
+    const rows = ((await res.json()) as { data: any[] }).data;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.configProblem, null);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3b Health - legacy custom row without baseUrl reports a config problem", async () => {
+  const stores = setupDb();
+  try {
+    seedLegacyCustomProvider(stores);
+
+    // The list (and its health data) stays admin-gated.
+    const anon = await jsonRequest("/api/v1/admin/providers", {});
+    assert.equal(anon.status, 401, "health data is admin-gated like the rest of the list");
+
+    const cookie = await adminSession(stores);
+    const list = await jsonRequest("/api/v1/admin/providers", { cookie });
+    const rows = ((await list.json()) as { data: any[] }).data;
+    const legacy = rows.find((r) => r.name === "Legacy Custom GW");
+    assert.ok(legacy, "legacy row must be listed");
+    assert.match(
+      legacy!.configProblem as string,
+      /base URL is required for the "custom_openai_compatible" provider type/,
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3b Health - GET /admin/providers/:id exposes the same configProblem", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const legacyId = seedLegacyCustomProvider(stores);
+
+    const res = await jsonRequest(`/api/v1/admin/providers/${legacyId}`, { cookie });
+    assert.equal(res.status, 200);
+    const row = ((await res.json()) as { data: any }).data;
+    assert.match(
+      row.configProblem as string,
+      /base URL is required/,
+    );
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3b Health - existing provider DTO fields remain unchanged", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const { id } = await seedCustomProvider(stores, cookie);
+
+    const res = await jsonRequest(`/api/v1/admin/providers/${id}`, { cookie });
+    assert.equal(res.status, 200);
+    const row = ((await res.json()) as { data: any }).data;
+    // The exact DTO key set: every pre-C6.8.3b field is still present, and
+    // configProblem is the single addition.
+    assert.deepEqual(
+      Object.keys(row).sort(),
+      [
+        "apiKeyMasked",
+        "baseUrl",
+        "config",
+        "configProblem",
+        "createdAt",
+        "enabled",
+        "hasApiKey",
+        "id",
+        "name",
+        "providerType",
+        "updatedAt",
+      ],
+    );
+    assert.equal(row.name, row.name);
+    assert.equal(row.providerType, "custom_openai_compatible");
+    assert.equal(row.baseUrl, "https://gateway.example.internal/v1");
+    assert.equal(typeof row.enabled, "boolean");
+    assert.equal(typeof row.hasApiKey, "boolean");
+    assert.equal(typeof row.createdAt, "string");
+    assert.equal(typeof row.updatedAt, "string");
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C6.8.3b Health - no secret material leaks through the health field or DTO", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await adminSession(stores);
+    const legacyId = seedLegacyCustomProvider(stores);
+
+    const single = await jsonRequest(`/api/v1/admin/providers/${legacyId}`, { cookie });
+    const list = await jsonRequest("/api/v1/admin/providers", { cookie });
+    const singleBody = await single.json();
+    const listBody = await list.json();
+    const rawSingle = JSON.stringify(singleBody);
+    const rawList = JSON.stringify(listBody);
+    for (const raw of [rawSingle, rawList]) {
+      assert.ok(!raw.includes(LEGACY_SECRET), "raw apiKeySecret value must never appear");
+      assert.ok(!raw.includes("apiKeySecret"), "sealed envelope column name must never appear");
+    }
+    const row = (singleBody as { data: any }).data;
+    // The health message is a static template — it must not interpolate
+    // secret or URL material.
+    assert.ok(!(row.configProblem as string).includes(LEGACY_SECRET));
+    assert.ok(!(row.configProblem as string).includes("sk-"));
+  } finally {
+    teardownDb();
+  }
+});
