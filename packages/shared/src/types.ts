@@ -10,6 +10,7 @@ import type {
   SourceKind,
   JobStatus,
   UserRole,
+  ProductionPlanStatus,
 } from "./constants.js";
 
 // ---------------------------------------------------------------------------
@@ -262,4 +263,28 @@ export interface AdminProject extends Project {
 export interface AdminJob extends GenerationJob {
   projectName?: string | null;
   providerName?: string | null;
+}
+
+/**
+ * A ProductionPlan (C7.1) — the persistent, reviewable record of an
+ * AI-assisted production request. It orchestrates the existing domain
+ * entities (episode, scenes, shots, generation jobs) by reference once
+ * approved; it never duplicates them.
+ */
+export interface ProductionPlan {
+  id: string;
+  projectId: string;
+  /** Optional target episode the plan is anchored to. */
+  episodeId: string | null;
+  /** The user's verbatim request that started the run. */
+  request: string;
+  status: ProductionPlanStatus;
+  /** Structured plan payload (editable while planning/ready_for_review). */
+  plan: Record<string, unknown> | null;
+  /** Target duration in seconds, when the user specified one. */
+  targetDurationSeconds: number | null;
+  /** Free-form user preferences captured at creation time. */
+  preferences: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
 }
