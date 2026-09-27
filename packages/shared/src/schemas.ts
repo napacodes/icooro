@@ -358,3 +358,26 @@ export const updateProductionPlanSchema = z
     message: "At least one field (plan, targetDurationSeconds, or status) is required for update",
   });
 export type ProductionPlanUpdateInput = z.infer<typeof updateProductionPlanSchema>;
+
+/**
+ * The structured story contract (C7.2): the first AI-assisted planning
+ * artifact a ProductionPlan can carry, stored inside the plan's existing
+ * `plan` JSON payload under the `story` key.
+ *
+ * Deliberately small: a story is a *planning* artifact (what the episode is
+ * about, who is in it, how it unfolds), NOT a production script. Scenes,
+ * shots, camera directions, visual prompts, dialogue and assets are later
+ * phases / other entities and are intentionally absent here.
+ */
+export const storyContractSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  premise: z.string().trim().min(1).max(2000),
+  learningObjective: z.string().trim().min(1).max(500),
+  characters: z.array(z.string().trim().min(1).max(120)).max(12),
+  setting: z.string().trim().min(1).max(1000),
+  beginning: z.string().trim().min(1).max(2000),
+  middle: z.string().trim().min(1).max(2000),
+  ending: z.string().trim().min(1).max(2000),
+  estimatedDurationSeconds: z.number().int().positive().max(3600),
+});
+export type StoryContract = z.infer<typeof storyContractSchema>;

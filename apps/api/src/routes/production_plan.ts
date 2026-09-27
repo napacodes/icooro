@@ -4,12 +4,16 @@ import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/projects.js";
 import { productionPlanService, ProductionPlanError } from "../services/production_plan.js";
 import {
+  storyGenerationService,
+  StoryGenerationError,
+} from "../services/story_generation.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   formatZodError,
 } from "../validation/schemas.js";
 
-type Status = 400 | 404 | 409 | 500;
+type Status = 400 | 404 | 409 | 500 | 502;
 const bad = (
   message: string,
   status: Status = 400,
@@ -17,7 +21,9 @@ const bad = (
     ? "NOT_FOUND"
     : status === 409
       ? "CONFLICT"
-      : "INVALID_REQUEST",
+      : status === 502
+        ? "BAD_GATEWAY"
+        : "INVALID_REQUEST",
 ) => ({ error: { code, message } });
 const internal = () => bad("An unexpected error occurred", 500, "INTERNAL_ERROR");
 
@@ -36,6 +42,11 @@ async function parseJsonBody(c: any): Promise<unknown> {
  * ownership contract: a plan from another user's project is a 404, never a
  * 403 (don't reveal existence). C7.1 creates/retrieves/updates local plan
  * records only — no AI/provider call ever runs from these endpoints.
+ *
+ * C7.2 adds the single AI-assisted step: POST .../production-plans/:id/story
+ * generates the structured story synchronously (planning-time only) and
+ * stores it in the plan payload. Project ownership and the plan/project
+ * relationship are enforced here, exactly as for the other plan endpoints.
  */
 export const nestedProductionPlansRoute = new Hono();
 
@@ -174,3 +185,48 @@ nestedProductionPlansRoute.patch("/projects/:projectId/production-plans/:id", as
     return c.json(internal(), 500);
   }
 });
+
+/**
+ * C7.2 — Story generation (planning-time AI step).
+ *
+ * POST /projects/:projectId/production-plans/:id/story
+ *
+ * Generates the structured story synchronously and stores it under
+ * `plan.story`. Body-less: the plan's request/preferences/duration provide
+ * all the context. Ownership is enforced exactly like every other plan
+ * endpoint: the project must exist and belong to the caller (admin
+ * bypasses), and the plan must belong to that project (else 404).
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/story",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const result = await storyGenerationService.generateStory({
+        projectId,
+        productionPlanId: id,
+      });
+      return c.json({ data: result });
+    } catch (error) {
+      if (error instanceof StoryGenerationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to generate story", error);
+      return c.json(internal(), 500);
+    }
+  },
+);

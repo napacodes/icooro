@@ -39,6 +39,7 @@ export {
   adminCreateModelSchema,
   createProductionPlanSchema,
   updateProductionPlanSchema,
+  storyContractSchema,
   // input types
   type SignupInput,
   type LoginInput,
@@ -60,6 +61,7 @@ export {
   type AdminCreateModelInput,
   type ProductionPlanCreateInput,
   type ProductionPlanUpdateInput,
+  type StoryContract,
 } from "@icooro/shared";
 
 import type { ZodError } from "zod";
