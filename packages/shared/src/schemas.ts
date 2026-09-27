@@ -381,3 +381,38 @@ export const storyContractSchema = z.object({
   estimatedDurationSeconds: z.number().int().positive().max(3600),
 });
 export type StoryContract = z.infer<typeof storyContractSchema>;
+
+/**
+ * The structured script contract (C7.3): the AI-assisted script planning
+ * artifact. It is NOT stored as a second permanent script database inside
+ * ProductionPlan.plan — it is the *content* of a ScriptVersion row on the
+ * plan's episode, serialized to JSON, so the existing C2/C3 script CRUD and
+ * versioning keep being the single source of truth.
+ *
+ * Deliberately script-layer only: it preserves the story's premise and
+ * learning objective and turns them into dialogue, but it contains NO
+ * scenes/camera/shot instructions — C7.4 owns scenes, C7.5 owns shots.
+ */
+export const scriptDialogueEntrySchema = z.object({
+  /** Who speaks. Prefer names already present in the story's characters. */
+  speaker: z.string().trim().min(1).max(120),
+  /** One concise line of dialogue. */
+  text: z.string().trim().min(1).max(500),
+});
+export type ScriptDialogueEntry = z.infer<typeof scriptDialogueEntrySchema>;
+
+export const scriptContractSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  /** The learning objective this script serves (carried over from the story). */
+  objective: z.string().trim().min(1).max(500),
+  /** Duration the script is designed to fit. */
+  estimatedDurationSeconds: z.number().int().positive().max(3600),
+  /** Ordered spoken lines. */
+  dialogue: z.array(scriptDialogueEntrySchema).min(1).max(100),
+  /** The line that closes the episode and reinforces the objective. */
+  closingLine: z.object({
+    speaker: z.string().trim().min(1).max(120),
+    text: z.string().trim().min(1).max(500),
+  }),
+});
+export type ScriptContract = z.infer<typeof scriptContractSchema>;

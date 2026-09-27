@@ -8,6 +8,10 @@ import {
   StoryGenerationError,
 } from "../services/story_generation.js";
 import {
+  scriptGenerationService,
+  ScriptGenerationError,
+} from "../services/script_generation.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   formatZodError,
@@ -226,6 +230,52 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to generate story", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C7.3 — Script generation (planning-time AI step).
+ *
+ * POST /projects/:projectId/production-plans/:id/script
+ *
+ * Generates the structured script from the plan's story (required) and
+ * persists it as a NEW ScriptVersion on the plan's episode — creating the
+ * episode when the plan is unanchored. Previous versions are never touched.
+ * The plan records only the reference (`plan.episodeId` /
+ * `plan.scriptVersionId`). Ownership is enforced exactly like every other
+ * plan endpoint; a wrong project/episode/plan relationship is a 404.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/script",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const result = await scriptGenerationService.generateScript({
+        projectId,
+        productionPlanId: id,
+      });
+      return c.json({ data: result });
+    } catch (error) {
+      if (error instanceof ScriptGenerationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to generate script", error);
       return c.json(internal(), 500);
     }
   },
