@@ -12,6 +12,10 @@ import {
   ScriptGenerationError,
 } from "../services/script_generation.js";
 import {
+  sceneGenerationService,
+  SceneGenerationError,
+} from "../services/scene_generation.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   formatZodError,
@@ -276,6 +280,54 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to generate script", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C7.4 — Scene generation (planning-time AI step).
+ *
+ * POST /projects/:projectId/production-plans/:id/scenes
+ *
+ * Generates the structured scene list from the plan's story (required) and
+ * script (required) and persists it as rows in the episode's EXISTING
+ * scenes table — no parallel scene model, no SceneVersion, no migration.
+ * Regeneration replaces only the previously generated (tracked) scene set;
+ * manual scenes are never touched, and tracked scenes that already have
+ * shots block regeneration (409). The plan records only the reference
+ * (`plan.sceneIds`). Ownership is enforced exactly like every other plan
+ * endpoint; a wrong project/episode/plan relationship is a 404.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/scenes",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const result = await sceneGenerationService.generateSceneList({
+        projectId,
+        productionPlanId: id,
+      });
+      return c.json({ data: result });
+    } catch (error) {
+      if (error instanceof SceneGenerationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to generate scenes", error);
       return c.json(internal(), 500);
     }
   },

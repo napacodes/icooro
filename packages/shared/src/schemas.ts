@@ -416,3 +416,32 @@ export const scriptContractSchema = z.object({
   }),
 });
 export type ScriptContract = z.infer<typeof scriptContractSchema>;
+
+/**
+ * The structured scene contract (C7.4): the AI-assisted scene planning
+ * artifact. A generated scene list is persisted as rows in the EXISTING
+ * `scenes` table (name/description), so the C2/C3 scene CRUD keeps being
+ * the single source of truth and no parallel scene model exists.
+ *
+ * Deliberately scene-layer only: a scene names and describes a beat of the
+ * episode. Order indexes, database IDs, episode/plan references, shots,
+ * camera directions, dialogue and media prompts are owned by the service
+ * or by later phases and are intentionally absent — the AI never emits
+ * them.
+ */
+export const sceneContractSchema = z.object({
+  /** Short scene name shown in the episode's scene list. */
+  name: z.string().trim().min(1).max(255),
+  /** What happens in the scene (no shots, camera, or dialogue here). */
+  description: z.string().trim().min(1).max(2000),
+});
+export type SceneContract = z.infer<typeof sceneContractSchema>;
+
+/**
+ * A generated scene list: the single JSON object the C7.4 scene generator
+ * asks the model for (1–20 scenes, in narrative order).
+ */
+export const sceneListContractSchema = z.object({
+  scenes: z.array(sceneContractSchema).min(1).max(20),
+});
+export type SceneListContract = z.infer<typeof sceneListContractSchema>;
