@@ -489,3 +489,21 @@ export const shotListContractSchema = z.object({
   shots: z.array(shotContractSchema).min(1).max(10),
 });
 export type ShotListContract = z.infer<typeof shotListContractSchema>;
+
+/**
+ * The structured media-prompt contract (C7.6): the AI-assisted media
+ * prompt for ONE existing shot, persisted into the shot's EXISTING
+ * `shots.prompt` column — the same field the manual generation workflow
+ * (C6 jobs) and the UI already read. No parallel prompt model, no
+ * `shot_versions` or `ai_jobs` writes, no negative prompt (approved
+ * decision: out of scope).
+ *
+ * Deliberately minimal: exactly one prompt string. Ids, order indexes,
+ * negative prompts, and any other shots' content are owned by the service
+ * or out of scope — the AI never emits them.
+ */
+export const shotPromptContractSchema = z.object({
+  /** The media-generation prompt describing THIS shot. */
+  prompt: z.string().trim().min(1).max(2000),
+});
+export type ShotPromptContract = z.infer<typeof shotPromptContractSchema>;
