@@ -16,6 +16,10 @@ import {
   SceneGenerationError,
 } from "../services/scene_generation.js";
 import {
+  shotGenerationService,
+  ShotGenerationError,
+} from "../services/shot_generation.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   formatZodError,
@@ -328,6 +332,59 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to generate scenes", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C7.5 — Shot generation (planning-time AI step).
+ *
+ * POST /projects/:projectId/production-plans/:id/scenes/:sceneId/shots
+ *
+ * Generates the structured shot list for ONE scene from the plan's story,
+ * script, and that scene, and persists it as rows in the scene's EXISTING
+ * shots table — no parallel shot model and no `shot_versions` writes (that
+ * table remains media-generation history). Regeneration replaces only the
+ * previously generated (tracked) shot set of the target scene; manual
+ * shots are never touched, and tracked shots with dependent data (shot
+ * versions/characters/locations/props/assets) block regeneration (409) —
+ * checked before the provider call and again before the first deletion.
+ * The plan records only the reference (`plan.shotIds`, keyed by scene id).
+ * The full project → plan → episode → scene chain is validated; anything
+ * foreign is an indistinguishable 404.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/scenes/:sceneId/shots",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    const sceneId = c.req.param("sceneId");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const result = await shotGenerationService.generateShotsForScene({
+        projectId,
+        productionPlanId: id,
+        sceneId,
+      });
+      return c.json({ data: result });
+    } catch (error) {
+      if (error instanceof ShotGenerationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to generate shots", error);
       return c.json(internal(), 500);
     }
   },

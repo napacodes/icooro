@@ -445,3 +445,47 @@ export const sceneListContractSchema = z.object({
   scenes: z.array(sceneContractSchema).min(1).max(20),
 });
 export type SceneListContract = z.infer<typeof sceneListContractSchema>;
+
+/**
+ * The structured shot contract (C7.5): the AI-assisted shot planning
+ * artifact. A generated shot list is persisted as rows in the EXISTING
+ * `shots` table, so the C2/C3 shot CRUD keeps being the single source of
+ * truth — no parallel shot model and NO `shot_versions` writes: that table
+ * remains media-generation history (C4/C5), not planning versioning.
+ *
+ * Deliberately shot-layer only: camera framing/movement/angle, purpose,
+ * visual/action descriptions, transition and duration. The script's
+ * dialogue is NEVER rewritten here (C7.3 owns it), media-generation
+ * `prompt`/`productionNotes` are human/C8 concerns, and ids/order indexes
+ * are owned by the service — the AI never emits them.
+ */
+export const shotContractSchema = z.object({
+  /** What this shot is for within the scene. */
+  purpose: z.string().trim().min(1).max(100),
+  /** Camera shot type (e.g. wide, medium, close-up). */
+  shotType: z.string().trim().min(1).max(100),
+  /** Camera framing (e.g. full shot, two shot). */
+  framing: z.string().trim().min(1).max(100),
+  /** Camera movement (e.g. static, pan, tilt). */
+  cameraMovement: z.string().trim().min(1).max(100),
+  /** Camera angle (e.g. eye level, low angle). */
+  cameraAngle: z.string().trim().min(1).max(100),
+  /** What happens in the shot. */
+  actionDescription: z.string().trim().min(1).max(2000),
+  /** What the shot looks like. */
+  visualDescription: z.string().trim().min(1).max(2000),
+  /** How the shot hands off to the next one. */
+  transition: z.string().trim().min(1).max(100),
+  /** Shot duration the plan should fit within. */
+  duration: z.number().int().positive().max(3600),
+});
+export type ShotContract = z.infer<typeof shotContractSchema>;
+
+/**
+ * A generated shot list for ONE scene: the single JSON object the C7.5
+ * shot generator asks the model for (1–10 shots, in narrative order).
+ */
+export const shotListContractSchema = z.object({
+  shots: z.array(shotContractSchema).min(1).max(10),
+});
+export type ShotListContract = z.infer<typeof shotListContractSchema>;
