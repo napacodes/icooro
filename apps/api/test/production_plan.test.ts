@@ -259,6 +259,66 @@ test("C7.1 Plans - create persists a local draft plan with planning defaults", a
   }
 });
 
+// ---------------------------------------------------------------------------
+// 1-3b. Create with optional targetDurationSeconds (C7.9)
+// ---------------------------------------------------------------------------
+
+test("C7.9 Plans - create persists an optional targetDurationSeconds in one request", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await userSession(stores);
+    const projectId = await seedProject(stores, cookie);
+
+    const { status, body } = await createPlan(cookie, projectId, {
+      targetDurationSeconds: 45,
+    });
+    assert.equal(status, 201);
+    const plan = body.data!;
+    assert.equal(plan.targetDurationSeconds, 45);
+
+    // The stored row itself carries the value (not just the response).
+    const stored = stores.productionPlans.get(plan.id)!;
+    assert.equal(stored.targetDurationSeconds, 45);
+
+    // Boundary values of the shared range are accepted.
+    const min = await createPlan(cookie, projectId, { targetDurationSeconds: 1 });
+    assert.equal(min.status, 201);
+    assert.equal(min.body.data!.targetDurationSeconds, 1);
+
+    const max = await createPlan(cookie, projectId, { targetDurationSeconds: 3600 });
+    assert.equal(max.status, 201);
+    assert.equal(max.body.data!.targetDurationSeconds, 3600);
+  } finally {
+    teardownDb();
+  }
+});
+
+test("C7.9 Plans - create rejects invalid targetDurationSeconds values", async () => {
+  const stores = setupDb();
+  try {
+    const cookie = await userSession(stores);
+    const projectId = await seedProject(stores, cookie);
+
+    for (const invalid of [0, -5, 3601, 12.5, "45"]) {
+      const res = await createPlan(cookie, projectId, {
+        request: "durable request",
+        targetDurationSeconds: invalid,
+      });
+      assert.equal(res.status, 400, `value ${JSON.stringify(invalid)} must be rejected`);
+    }
+    assert.equal(stores.productionPlans.size, 0, "no plan may be created from invalid durations");
+
+    // Explicit null is accepted and means "no duration" (same as omission).
+    const explicitNull = await createPlan(cookie, projectId, {
+      targetDurationSeconds: null,
+    });
+    assert.equal(explicitNull.status, 201);
+    assert.equal(explicitNull.body.data!.targetDurationSeconds, null);
+  } finally {
+    teardownDb();
+  }
+});
+
 test("C7.1 Plans - plan can be retrieved by id within its project", async () => {
   const stores = setupDb();
   try {

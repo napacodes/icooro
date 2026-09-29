@@ -108,6 +108,7 @@ nestedProductionPlansRoute.post("/projects/:projectId/production-plans", async (
       projectId,
       request: parsed.data.request,
       episodeId: parsed.data.episodeId,
+      targetDurationSeconds: parsed.data.targetDurationSeconds,
       preferences: parsed.data.preferences,
     });
     return c.json({ data: created }, 201);

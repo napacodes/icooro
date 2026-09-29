@@ -327,6 +327,12 @@ export const JOB_TYPE_CAPABILITY: Readonly<Record<GenerationJobType, ProviderCap
 // ---------------------------------------------------------------------------
 
 /**
+ * The valid target-duration range for a ProductionPlan. Shared by the
+ * create/update schemas and the UI so every surface enforces one contract.
+ */
+export const PRODUCTION_PLAN_TARGET_DURATION = { min: 1, max: 3600 } as const;
+
+/**
  * Create a ProductionPlan (C7.1): record the user's high-level production
  * request as a local draft. No AI/provider call happens at this stage —
  * planning itself is a later phase.
@@ -336,6 +342,8 @@ export const createProductionPlanSchema = z.object({
   request: z.string().trim().min(1, "request is required").max(4000),
   /** Optional target episode the plan is anchored to. Must belong to the project. */
   episodeId: z.string().trim().length(36).nullable().optional(),
+  /** Optional target duration in seconds, applied at creation time (C7.9). */
+  targetDurationSeconds: z.number().int().min(PRODUCTION_PLAN_TARGET_DURATION.min).max(PRODUCTION_PLAN_TARGET_DURATION.max).nullable().optional(),
   /** Optional free-form preferences (tone, audience, constraints...) for later planning phases. */
   preferences: z.record(z.string(), z.unknown()).nullable().optional(),
 });
@@ -537,3 +545,43 @@ export const orchestratePlanSchema = z.object({
   to: z.enum(PRODUCTION_PLAN_ORCHESTRATION_STAGES).optional(),
 });
 export type ProductionPlanOrchestrateInput = z.infer<typeof orchestratePlanSchema>;
+
+/**
+ * Outcome of ONE planning stage inside an orchestration run (C7.7). The
+ * fields are optional because not every outcome carries counts or reasons;
+ * `| undefined` keeps the type honest under `exactOptionalPropertyTypes`.
+ */
+export type OrchestrationStageStatus =
+  | "completed"
+  | "skipped"
+  | "partial"
+  | "failed"
+  | "not_run";
+
+export interface OrchestrationStageReport {
+  stage: ProductionPlanOrchestrationStage;
+  status: OrchestrationStageStatus;
+  /** Human-readable reason for skipped / partial / failed / not_run stages. */
+  reason?: string | undefined;
+  /** Concise counts where practical. */
+  generated?: number | undefined;
+  skipped?: number | undefined;
+  /** Tracked ids that no longer exist (manually deleted) — reported, never recreated. */
+  missingTrackedIds?: string[] | undefined;
+}
+
+/**
+ * The response payload of POST .../production-plans/:id/orchestrate (C7.7):
+ * the aggregate run status, the per-stage report rows, and the final plan
+ * payload. Single source of truth for the backend service and the UI.
+ */
+export interface OrchestrationReport {
+  productionPlanId: string;
+  /** Aggregate: any failed → failed; any partial → partial; else completed. */
+  status: "completed" | "partial" | "failed";
+  /** The `to` bound of the request (null = full sequence). */
+  requestedTo: ProductionPlanOrchestrationStage | null;
+  stages: OrchestrationStageReport[];
+  /** The final plan payload, same shape the stage services return. */
+  plan: Record<string, unknown> | null;
+}

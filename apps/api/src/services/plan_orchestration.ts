@@ -3,7 +3,15 @@ import { getDb } from "../db/index.js";
 import { scenes } from "../db/schema/scenes.js";
 import { shots } from "../db/schema/shots.js";
 import { scripts } from "../db/schema/scripts.js";
-import { storyContractSchema, type ProductionPlanStatus } from "@icooro/shared";
+import {
+  PRODUCTION_PLAN_ORCHESTRATION_STAGES,
+  storyContractSchema,
+  type OrchestrationReport,
+  type OrchestrationStageReport,
+  type OrchestrationStageStatus,
+  type ProductionPlanOrchestrationStage,
+  type ProductionPlanStatus,
+} from "@icooro/shared";
 import { productionPlanService } from "./production_plan.js";
 import { storyGenerationService } from "./story_generation.js";
 import { scriptGenerationService } from "./script_generation.js";
@@ -55,46 +63,16 @@ import { promptGenerationService } from "./prompt_generation.js";
  * deployments (the current posture) are fully protected.
  */
 
-/** The five planning stages, in the fixed orchestration order. */
-export const ORCHESTRATION_STAGES = [
-  "story",
-  "script",
-  "scenes",
-  "shots",
-  "prompts",
-] as const;
+/**
+ * The five planning stages, in the fixed orchestration order, plus the
+ * report types. The canonical definitions live in @icooro/shared (C7.9);
+ * these aliases keep the service's existing export surface stable.
+ */
+export const ORCHESTRATION_STAGES = PRODUCTION_PLAN_ORCHESTRATION_STAGES;
 
-export type OrchestrationStage = (typeof ORCHESTRATION_STAGES)[number];
+export type OrchestrationStage = ProductionPlanOrchestrationStage;
 
-export type OrchestrationStageStatus =
-  | "completed"
-  | "skipped"
-  | "partial"
-  | "failed"
-  | "not_run";
-
-export interface OrchestrationStageReport {
-  stage: OrchestrationStage;
-  status: OrchestrationStageStatus;
-  /** Human-readable reason for skipped / partial / failed / not_run stages. */
-  reason?: string | undefined;
-  /** Concise counts where practical. */
-  generated?: number | undefined;
-  skipped?: number | undefined;
-  /** Tracked ids that no longer exist (manually deleted) — reported, never recreated. */
-  missingTrackedIds?: string[] | undefined;
-}
-
-export interface OrchestrationReport {
-  productionPlanId: string;
-  /** Aggregate: any failed → failed; any partial → partial; else completed. */
-  status: "completed" | "partial" | "failed";
-  /** The `to` bound of the request (null = full sequence). */
-  requestedTo: OrchestrationStage | null;
-  stages: OrchestrationStageReport[];
-  /** The final plan payload, same shape the stage services return. */
-  plan: Record<string, unknown> | null;
-}
+export type { OrchestrationStageStatus, OrchestrationStageReport, OrchestrationReport };
 
 /**
  * Thrown for preflight failures (missing plan, ownership mismatch, wrong

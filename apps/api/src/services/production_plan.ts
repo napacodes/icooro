@@ -69,6 +69,8 @@ export interface CreateProductionPlanParams {
   projectId: string;
   request: string;
   episodeId?: string | null | undefined;
+  /** Optional target duration in seconds, persisted at creation time (C7.9). */
+  targetDurationSeconds?: number | null | undefined;
   preferences?: Record<string, unknown> | null | undefined;
 }
 
@@ -112,7 +114,7 @@ export class ProductionPlanService {
       request: input.request,
       status: "planning" as const,
       plan: null,
-      targetDurationSeconds: null,
+      targetDurationSeconds: input.targetDurationSeconds ?? null,
       preferences: input.preferences ?? null,
     };
 

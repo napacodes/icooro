@@ -1,5 +1,9 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue";
-import { ApiError, type ProductionPlanOrchestrationStage } from "@icooro/shared";
+import {
+  ApiError,
+  type OrchestrationReport,
+  type ProductionPlanOrchestrationStage,
+} from "@icooro/shared";
 
 /**
  * useProductionPlans — C7.8 frontend state for the Production Plans area.
@@ -12,9 +16,8 @@ import { ApiError, type ProductionPlanOrchestrationStage } from "@icooro/shared"
  *
  * Response types mirror the API's actual contracts:
  * - Plan rows come from the C7.1 CRUD endpoints (production_plans table row).
- * - `OrchestrationReport` mirrors the C7.7 service's report (no shared type
- *   exists for the report yet — the request side IS shared:
- *   `orchestratePlanSchema` / `PRODUCTION_PLAN_ORCHESTRATION_STAGES`).
+ * - `OrchestrationReport` is the shared C7.7 report contract, defined once
+ *   in @icooro/shared (C7.9) and used by backend and frontend alike.
  */
 
 /** One production plan row, as returned by the C7.1 endpoints. */
@@ -41,25 +44,6 @@ export const ORCHESTRATION_STAGE_LABELS: Readonly<
   shots: "Shots",
   prompts: "Prompts",
 };
-
-/** Per-stage outcome of one orchestration run (C7.7 report row). */
-export interface OrchestrationStageReport {
-  stage: ProductionPlanOrchestrationStage;
-  status: "completed" | "skipped" | "partial" | "failed" | "not_run";
-  reason?: string | undefined;
-  generated?: number | undefined;
-  skipped?: number | undefined;
-  missingTrackedIds?: string[] | undefined;
-}
-
-/** The full C7.7 orchestration response payload. */
-export interface OrchestrationReport {
-  productionPlanId: string;
-  status: "completed" | "partial" | "failed";
-  requestedTo: ProductionPlanOrchestrationStage | null;
-  stages: OrchestrationStageReport[];
-  plan: Record<string, unknown> | null;
-}
 
 /**
  * Returns a user-facing message for a caught request error. `ApiError`
@@ -104,7 +88,6 @@ export interface UseProductionPlansState {
   loadPlans: () => Promise<void>;
   loadPlan: (options?: { silent?: boolean }) => Promise<void>;
   createPlan: (input: CreateProductionPlanUiInput) => Promise<ProductionPlan>;
-  updateTargetDuration: (planId: string, seconds: number) => Promise<ProductionPlan>;
   orchestratePlan: (
     planId: string,
     to?: ProductionPlanOrchestrationStage | undefined,
@@ -169,15 +152,17 @@ export function useProductionPlans(): UseProductionPlansState {
   }
 
   /**
-   * Creates a plan from the user's request prompt. The C7.1 create
-   * endpoint accepts the request plus optional opaque preferences; the
-   * optional target duration is applied through the plan-update endpoint
-   * by the caller (see `updateTargetDuration`).
+   * Creates a plan from the user's request prompt. The optional target
+   * duration rides along in the SAME request (C7.9 create contract), so
+   * no follow-up PATCH is needed.
    */
   async function createPlan(input: CreateProductionPlanUiInput): Promise<ProductionPlan> {
     creating.value = true;
     try {
       const body: Record<string, unknown> = { request: input.request.trim() };
+      if (input.targetDurationSeconds !== undefined && input.targetDurationSeconds !== null) {
+        body.targetDurationSeconds = input.targetDurationSeconds;
+      }
       if (input.preferenceNotes && input.preferenceNotes.trim().length > 0) {
         body.preferences = { notes: input.preferenceNotes.trim() };
       }
@@ -188,14 +173,6 @@ export function useProductionPlans(): UseProductionPlansState {
     } finally {
       creating.value = false;
     }
-  }
-
-  /** Applies the optional target duration to an existing plan. */
-  async function updateTargetDuration(planId: string, seconds: number): Promise<ProductionPlan> {
-    return api.patch<ProductionPlan>(
-      `/projects/${projectId.value}/production-plans/${planId}`,
-      { targetDurationSeconds: seconds },
-    );
   }
 
   /**
@@ -238,7 +215,6 @@ export function useProductionPlans(): UseProductionPlansState {
     loadPlans,
     loadPlan,
     createPlan,
-    updateTargetDuration,
     orchestratePlan,
   };
 }
