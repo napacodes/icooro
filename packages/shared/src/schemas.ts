@@ -507,3 +507,33 @@ export const shotPromptContractSchema = z.object({
   prompt: z.string().trim().min(1).max(2000),
 });
 export type ShotPromptContract = z.infer<typeof shotPromptContractSchema>;
+
+// ---------------------------------------------------------------------------
+// C7.7 — Production plan orchestration
+// ---------------------------------------------------------------------------
+
+/**
+ * The five planning stages, in the fixed orchestration order (C7.7). The
+ * orchestrator runs the remaining stages of a ProductionPlan in sequence by
+ * calling the existing C7.2–C7.6 stage services — gap-fill only.
+ */
+export const PRODUCTION_PLAN_ORCHESTRATION_STAGES = [
+  "story",
+  "script",
+  "scenes",
+  "shots",
+  "prompts",
+] as const;
+export type ProductionPlanOrchestrationStage =
+  (typeof PRODUCTION_PLAN_ORCHESTRATION_STAGES)[number];
+
+/**
+ * Optional body of POST /projects/:projectId/production-plans/:id/orchestrate
+ * (C7.7). Omitted `to` runs the full sequence; a supplied `to` runs the
+ * sequence up to and including that stage. Existing valid outputs are always
+ * skipped — the endpoint is gap-fill only and never regenerates.
+ */
+export const orchestratePlanSchema = z.object({
+  to: z.enum(PRODUCTION_PLAN_ORCHESTRATION_STAGES).optional(),
+});
+export type ProductionPlanOrchestrateInput = z.infer<typeof orchestratePlanSchema>;
