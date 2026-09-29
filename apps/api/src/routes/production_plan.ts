@@ -20,6 +20,10 @@ import {
   ShotGenerationError,
 } from "../services/shot_generation.js";
 import {
+  promptGenerationService,
+  PromptGenerationError,
+} from "../services/prompt_generation.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   formatZodError,
@@ -385,6 +389,59 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to generate shots", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C7.6 — Media prompt generation (planning-time AI step).
+ *
+ * POST /projects/:projectId/production-plans/:id/scenes/:sceneId/shots/:shotId/prompt
+ *
+ * Generates ONE media prompt for the target shot from the plan's story,
+ * script, the scene, and the shot's own planned fields, and writes it into
+ * the shot's EXISTING `shots.prompt` column — the field the manual C6
+ * generation workflow already reads. NO `shot_versions` or `ai_jobs`
+ * writes. Manual work is preserved: a non-null prompt on a shot NOT
+ * tracked in `plan.promptedShotIds` is hand-authored and returns 409
+ * rather than being silently overwritten; a tracked shot may always be
+ * regenerated. The full project → plan → episode → scene → shot chain is
+ * validated; anything foreign is an indistinguishable 404.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/scenes/:sceneId/shots/:shotId/prompt",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    const sceneId = c.req.param("sceneId");
+    const shotId = c.req.param("shotId");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const result = await promptGenerationService.generateShotPrompt({
+        projectId,
+        productionPlanId: id,
+        sceneId,
+        shotId,
+      });
+      return c.json({ data: result });
+    } catch (error) {
+      if (error instanceof PromptGenerationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to generate prompt", error);
       return c.json(internal(), 500);
     }
   },
