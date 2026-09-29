@@ -124,7 +124,6 @@ const {
   projectId,
   loadPlans,
   createPlan,
-  updateTargetDuration,
 } = useProductionPlans();
 
 const showForm = ref(false);
@@ -180,13 +179,12 @@ async function onCreatePlan() {
   }
 
   try {
+    // One request carries the request, duration, and preferences (C7.9).
     const created = await createPlan({
       request,
+      targetDurationSeconds: seconds,
       preferenceNotes: form.preferenceNotes.trim() || undefined,
     });
-    if (seconds !== null) {
-      await updateTargetDuration(created.id, seconds);
-    }
     form.request = "";
     form.targetDuration = "";
     form.preferenceNotes = "";

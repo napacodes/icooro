@@ -204,9 +204,9 @@ describe("C7.8 Plans list view (/app/projects/:id/plans)", () => {
     expect(wrapper.text()).toContain("Create a Plan");
   });
 
-  it("creates a plan with optional duration and preferences and navigates to it", async () => {
+  it("creates a plan in one request with duration and preferences, no follow-up PATCH", async () => {
     const postMock = vi.fn().mockResolvedValue({ ...mockPlanRow, id: "plan_new" });
-    const patchMock = vi.fn().mockResolvedValue({ ...mockPlanRow, id: "plan_new" });
+    const patchMock = vi.fn();
     (globalThis as any).useApi = () => ({
       get: vi.fn().mockResolvedValue([mockPlanRow]),
       post: postMock,
@@ -231,17 +231,45 @@ describe("C7.8 Plans list view (/app/projects/:id/plans)", () => {
     await wrapper.find("form").trigger("submit");
     await flushPromises();
 
-    // Create call carries the request and opaque preference notes.
+    // ONE request carries request, target duration, and preferences (C7.9).
+    expect(postMock).toHaveBeenCalledTimes(1);
     expect(postMock).toHaveBeenCalledWith("/projects/proj_100/production-plans", {
       request: "Make a 45-second episode about shapes",
+      targetDurationSeconds: 45,
       preferences: { notes: "Friendly tone for kids" },
     });
-    // Optional target duration goes through the plan-update endpoint.
-    expect(patchMock).toHaveBeenCalledWith("/projects/proj_100/production-plans/plan_new", {
-      targetDurationSeconds: 45,
-    });
+    // No follow-up PATCH may be issued to set the duration.
+    expect(patchMock).not.toHaveBeenCalled();
     // User lands on the new plan's detail view.
     expect(pushMock).toHaveBeenCalledWith("/app/projects/proj_100/plans/plan_new");
+  });
+
+  it("omits targetDurationSeconds from the create body when not provided", async () => {
+    const postMock = vi.fn().mockResolvedValue({ ...mockPlanRow, id: "plan_new" });
+    (globalThis as any).useApi = () => ({
+      get: vi.fn().mockResolvedValue([mockPlanRow]),
+      post: postMock,
+    });
+    const pushMock = vi.fn().mockResolvedValue(undefined);
+    (globalThis as any).useRouter = () => ({ push: pushMock });
+
+    const PlansView = (await import("../pages/app/projects/[id]/plans.vue")).default;
+    const wrapper = mount(PlansView as any, { global: commonGlobal });
+    await flushPromises();
+
+    await wrapper.find(".view-header button").trigger("click");
+    await flushPromises();
+
+    const textareas = wrapper.findAll("textarea");
+    await textareas[0]!.setValue("A story about numbers");
+    // Leave the duration input empty.
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+
+    expect(postMock).toHaveBeenCalledWith("/projects/proj_100/production-plans", {
+      request: "A story about numbers",
+    });
+    expect(pushMock).toHaveBeenCalled();
   });
 
   it("surfaces validation and API errors without navigating", async () => {
@@ -558,5 +586,34 @@ describe("C7.8 Plan detail view (/app/projects/:id/plans/:planId)", () => {
     const runButton = wrapper.find("button.run-btn");
     expect(runButton.attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("This plan is approved. Orchestration runs only while the plan is in planning.");
+  });
+
+  it("uses the shared OrchestrationReport contract for report rendering", async () => {
+    // The shared package carries the runtime contract constants...
+    const shared = (await import("@icooro/shared")) as unknown as Record<string, unknown>;
+    expect(shared.PRODUCTION_PLAN_TARGET_DURATION).toEqual({ min: 1, max: 3600 });
+    expect(shared.PRODUCTION_PLAN_ORCHESTRATION_STAGES).toBeDefined();
+    // ...and the report TYPES (erased at runtime) type the composable's
+    // state: a report shaped exactly like the shared contract must be
+    // assignable to the composable's report ref.
+    const typedReport: import("@icooro/shared").OrchestrationReport = {
+      productionPlanId: "plan_1",
+      status: "partial",
+      requestedTo: "shots",
+      stages: [
+        {
+          stage: "shots",
+          status: "partial",
+          generated: 1,
+          missingTrackedIds: ["shot_gone"],
+          reason: "Some tracked shots no longer exist",
+        },
+      ],
+      plan: null,
+    };
+    const { useProductionPlans } = await import("../composables/useProductionPlans");
+    const state = useProductionPlans();
+    state.report.value = typedReport;
+    expect(state.report.value?.stages[0]?.missingTrackedIds).toEqual(["shot_gone"]);
   });
 });
