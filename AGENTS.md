@@ -499,3 +499,61 @@ corepack pnpm typecheck
 corepack pnpm build
 
 git diff --check
+```
+
+\---
+
+\# 14. Production Plan Orchestration (C7.7)
+
+Planning-time AI generation is orchestrated by one synchronous, user-triggered endpoint:
+
+\- `POST /projects/:projectId/production-plans/:id/orchestrate`
+
+An optional body `{ "to": stage }` bounds the sequence to the requested stage:
+
+\- story → script → scenes → shots → prompts
+
+The orchestrator calls the existing C7.2–C7.6 stage services directly.
+It performs no internal HTTP calls and adds no new validation.
+
+Orchestration is gap-fill ONLY:
+
+\- existing valid story and script outputs are skipped, never regenerated
+\- existing tracked scenes and shots are kept as-is
+\- prompts are generated only for tracked shots whose prompt is still empty
+\- manual scenes, shots and prompts are never targets and never overwritten
+
+Missing tracked content is reported, never recreated:
+
+\- tracked scenes or shots that no longer exist are listed in `missingTrackedIds`
+\- the affected stage is reported `partial` and the run continues
+\- recreate them explicitly with the per-stage C7.4 / C7.5 endpoints
+
+Stage behavior and reporting:
+
+\- the run stops at the first failed stage; later stages are reported `not_run`
+\- earlier successful stages keep their persisted output
+\- the response is a structured report: overall `completed` / `partial` / `failed`, per-stage status, counts, reasons and the final plan payload
+\- stage failures are report data (HTTP 200); only preflight failures (body, ownership, plan status, concurrency) are HTTP errors
+
+Plan status discipline:
+
+\- orchestration never changes the plan status; it stays `planning`
+\- review and approval remain user-triggered via the C7.1 PATCH endpoint
+
+Concurrency:
+
+\- a second concurrent orchestration of the same plan is rejected with 409
+\- the guard is process-local; it is NOT a distributed lock
+\- multi-instance deployments could run the same plan concurrently
+
+Execution boundary:
+
+\- orchestration is synchronous; each stage completes before the next starts
+\- no `ai_jobs`, `shot_versions`, assets or media generation are created or triggered
+\- the media-generation handoff remains a later milestone
+
+Verification baseline (main merge commit `2c661f5`):
+
+\- 12 focused orchestration tests passed
+\- 378 full API tests passed
