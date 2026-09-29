@@ -39,9 +39,11 @@ export {
   adminCreateModelSchema,
   createProductionPlanSchema,
   updateProductionPlanSchema,
+  orchestratePlanSchema,
   storyContractSchema,
   scriptContractSchema,
   scriptDialogueEntrySchema,
+  // constants
   // input types
   type SignupInput,
   type LoginInput,
@@ -63,6 +65,7 @@ export {
   type AdminCreateModelInput,
   type ProductionPlanCreateInput,
   type ProductionPlanUpdateInput,
+  type ProductionPlanOrchestrateInput,
   type StoryContract,
   type ScriptContract,
   type ScriptDialogueEntry,

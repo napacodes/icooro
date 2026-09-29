@@ -24,8 +24,13 @@ import {
   PromptGenerationError,
 } from "../services/prompt_generation.js";
 import {
+  planOrchestrationService,
+  PlanOrchestrationError,
+} from "../services/plan_orchestration.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
+  orchestratePlanSchema,
   formatZodError,
 } from "../validation/schemas.js";
 
@@ -442,6 +447,75 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to generate prompt", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C7.7 — Production plan orchestration (planning-time AI sequence).
+ *
+ * POST /projects/:projectId/production-plans/:id/orchestrate
+ *
+ * Runs the plan's REMAINING planning stages in order (story → script →
+ * scenes → shots → prompts) by calling the existing C7.2–C7.6 stage
+ * services directly — gap-fill only: existing valid outputs are skipped,
+ * never regenerated. Optional body `{ "to": stage }` bounds the sequence.
+ * The plan status is never changed; review and approval stay user-triggered
+ * (C7.1 PATCH). No ai_jobs / shot_versions / media-generation writes — that
+ * handoff is a later milestone. Ownership is enforced exactly like every
+ * other plan endpoint: a wrong project/plan relationship is a 404, and a
+ * concurrent orchestration of the same plan is a 409 (process-local guard).
+ * Stage failures are returned as structured report data (HTTP 200); only
+ * preflight failures (body, ownership, status, concurrency) are HTTP errors.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/orchestrate",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+
+    // Optional body: `{ "to": stage }` or no body at all. An empty body is
+    // valid (full sequence); a malformed JSON body is a 400 like elsewhere.
+    const rawBody = await c.req.text();
+    let body: unknown = undefined;
+    if (rawBody.trim().length > 0) {
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return c.json(bad("Request body must be a JSON object"), 400);
+      }
+    }
+    const parsed = orchestratePlanSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      return c.json(formatZodError(parsed.error), 400);
+    }
+
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const report = await planOrchestrationService.orchestratePlan({
+        projectId,
+        productionPlanId: id,
+        to: parsed.data.to,
+      });
+      return c.json({ data: report });
+    } catch (error) {
+      if (error instanceof PlanOrchestrationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to orchestrate production plan", error);
       return c.json(internal(), 500);
     }
   },
