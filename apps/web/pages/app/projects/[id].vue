@@ -169,6 +169,7 @@ const statusOptions = [
 ];
 
 const sections = [
+  { slug: "plans", label: "Plans" },
   { slug: "story", label: "Story" },
   { slug: "episodes", label: "Episodes" },
   { slug: "scenes", label: "Scenes" },
