@@ -10,6 +10,7 @@ import {
   SOURCE_KINDS,
   USER_ROLES,
   type GenerationJobType,
+  type JobStatus,
   type ProviderCapability,
   type ProductionPlanStatus,
 } from "./constants.js";
@@ -584,4 +585,65 @@ export interface OrchestrationReport {
   stages: OrchestrationStageReport[];
   /** The final plan payload, same shape the stage services return. */
   plan: Record<string, unknown> | null;
+}
+
+// ---------------------------------------------------------------------------
+// C8.1 — Media generation from an approved Production Plan
+// ---------------------------------------------------------------------------
+
+/**
+ * The fixed generation job type the C8.1 entry point creates for every
+ * eligible tracked shot. Shot media generation is video generation in the
+ * current production workflow; provider/model selection itself remains the
+ * existing C6.8 routing infrastructure's job.
+ */
+export const PLAN_GENERATION_JOB_TYPE: GenerationJobType = "text-to-video";
+
+/**
+ * The plan-payload key under which the C8.1 entry point records the ids of
+ * the generation jobs it initiated, as a flat string array (the same
+ * tracking convention as `promptedShotIds`). Append-only and duplicate-free;
+ * `ai_jobs` remains the single source of truth for job status — the plan
+ * payload records provenance only.
+ */
+export const PRODUCTION_PLAN_GENERATED_JOB_IDS_KEY = "generatedJobIds";
+
+/** Aggregate outcome of one POST .../production-plans/:id/generate call. */
+export type PlanGenerationReportStatus = "completed" | "partial" | "failed";
+
+/** One generation job accepted for a tracked shot (newly created or already active). */
+export interface PlanGenerationJobRef {
+  sceneId: string;
+  shotId: string;
+  jobId: string;
+  /** The job's lifecycle status at response time ("queued" for created jobs). */
+  status: JobStatus;
+}
+
+/** One tracked shot whose work could not be accepted, with the reason. */
+export interface PlanGenerationItemFailure {
+  sceneId: string;
+  shotId: string;
+  reason: string;
+}
+
+/**
+ * The response payload of POST .../production-plans/:id/generate (C8.1):
+ * per-shot acceptance of the media-generation work created from an
+ * approved plan. `created` and `alreadyActive` carry the job identifiers
+ * and statuses a UI needs to display the accepted work; `failed` reports
+ * the shots that were rejected and why. Partial outcomes never hide
+ * already-created work, and the plan's status is never changed here.
+ */
+export interface PlanGenerationReport {
+  productionPlanId: string;
+  /** completed = every tracked shot accepted; partial = some accepted; failed = none accepted. */
+  status: PlanGenerationReportStatus;
+  jobType: GenerationJobType;
+  /** Jobs newly created by this call (status "queued", awaiting the executor). */
+  created: PlanGenerationJobRef[];
+  /** This plan's still-active jobs for tracked shots, found by duplicate-submission deduplication. */
+  alreadyActive: PlanGenerationJobRef[];
+  /** Tracked shots that were rejected, with the reason. */
+  failed: PlanGenerationItemFailure[];
 }
