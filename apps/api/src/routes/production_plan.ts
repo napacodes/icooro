@@ -32,6 +32,10 @@ import {
   PlanGenerationError,
 } from "../services/plan_generation.js";
 import {
+  planExecutionService,
+  PlanExecutionError,
+} from "../services/plan_execution.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   orchestratePlanSchema,
@@ -513,6 +517,60 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to start plan media generation", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C8.2 — Execution initiation for plan-generated jobs.
+ *
+ * POST /projects/:projectId/production-plans/:id/execute
+ *
+ * Body-less: the plan's C8.1 `generatedJobIds` payload tracking is the
+ * entire input — caller-supplied job ids are never accepted, so the
+ * endpoint cannot be used to execute arbitrary jobs. Every tracked id is
+ * resolved and context-verified (project, plan provenance, shot, job
+ * type); queued jobs are handed to the EXISTING generation executor
+ * (`GenerationExecutorService.submitJob`) — no provider is ever called
+ * from this endpoint, and no ai_jobs rows are created. Already-active
+ * jobs (submitted/processing/downloading) are not resubmitted; terminal
+ * jobs are skipped, never auto-regenerated. Polling, downloading and
+ * asset persistence stay in the existing job lifecycle. Ownership is
+ * enforced exactly like every other plan endpoint (404 for missing or
+ * foreign projects/plans), the plan must be `approved` (409 otherwise),
+ * and the response is a structured per-job report under the standard
+ * envelope. Full contract: docs/api/production-plan-generation.md.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/execute",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const report = await planExecutionService.executePlan({
+        projectId,
+        productionPlanId: id,
+      });
+      return c.json({ data: report });
+    } catch (error) {
+      if (error instanceof PlanExecutionError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to start plan execution", error);
       return c.json(internal(), 500);
     }
   },
