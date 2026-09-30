@@ -69,6 +69,7 @@ export {
   type ProductionPlanUpdateInput,
   type ProductionPlanOrchestrateInput,
   type PlanGenerationReport,
+  type PlanExecutionReport,
   type StoryContract,
   type ScriptContract,
   type ScriptDialogueEntry,

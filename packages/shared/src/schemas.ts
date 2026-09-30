@@ -647,3 +647,62 @@ export interface PlanGenerationReport {
   /** Tracked shots that were rejected, with the reason. */
   failed: PlanGenerationItemFailure[];
 }
+
+// ---------------------------------------------------------------------------
+// C8.2 — Execution initiation for plan-generated jobs
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-job outcome of one POST .../production-plans/:id/execute call. Uses
+ * the repository's existing lifecycle vocabulary — no new job states:
+ * - "submitted": a queued job was handed to the existing executor, which
+ *   transitioned it queued → submitted (provider identifier persisted).
+ * - "already_active": the job is submitted/processing/downloading (or a
+ *   concurrent submission won the executor's in-flight guard) and was
+ *   therefore not submitted again.
+ * - "skipped": the tracked job id no longer resolves to a job, its context
+ *   no longer matches the plan (project/shot/type), or the job is terminal
+ *   (completed/failed/cancelled) — terminal work is never auto-regenerated.
+ * - "failed": submission was attempted and failed (e.g. provider error,
+ *   missing provider/model configuration).
+ */
+export type PlanExecutionOutcome = "submitted" | "already_active" | "skipped" | "failed";
+
+/** Aggregate outcome of one POST .../production-plans/:id/execute call. */
+export type PlanExecutionReportStatus = "completed" | "partial" | "failed";
+
+/** One plan-generated job's initiation result. */
+export interface PlanExecutionItem {
+  jobId: string;
+  /** Shot/scene context when the job row resolved; null for unresolvable ids. */
+  shotId: string | null;
+  sceneId: string | null;
+  /** The job's lifecycle status at response time (null when the row is gone). */
+  status: JobStatus | null;
+  outcome: PlanExecutionOutcome;
+  /** Sanitized human reason for skipped / failed outcomes. */
+  reason?: string | undefined;
+}
+
+/**
+ * The response payload of POST .../production-plans/:id/execute (C8.2):
+ * per-job initiation results for the jobs the C8.1 entry point created from
+ * this plan. Submission only — polling, downloading and asset persistence
+ * stay in the existing job lifecycle. No new jobs are created here, the
+ * plan's status is never changed, and `ai_jobs` remains the source of truth
+ * for job status.
+ */
+export interface PlanExecutionReport {
+  productionPlanId: string;
+  /** completed = every tracked job submitted or already active; partial = some; failed = none. */
+  status: PlanExecutionReportStatus;
+  jobType: GenerationJobType;
+  /** Tracked jobs handed to the executor by this call (now submitted). */
+  submitted: PlanExecutionItem[];
+  /** Tracked jobs already in flight (submitted/processing/downloading). */
+  alreadyActive: PlanExecutionItem[];
+  /** Tracked jobs not attempted: missing, context-mismatched, or terminal. */
+  skipped: PlanExecutionItem[];
+  /** Tracked jobs whose submission was attempted and failed. */
+  failed: PlanExecutionItem[];
+}
