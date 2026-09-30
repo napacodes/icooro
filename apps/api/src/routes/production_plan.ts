@@ -28,6 +28,10 @@ import {
   PlanOrchestrationError,
 } from "../services/plan_orchestration.js";
 import {
+  planGenerationService,
+  PlanGenerationError,
+} from "../services/plan_generation.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   orchestratePlanSchema,
@@ -448,6 +452,67 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to generate prompt", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C8.1 — Media generation entry point for an approved ProductionPlan.
+ *
+ * POST /projects/:projectId/production-plans/:id/generate
+ *
+ * Body-less: the approved plan's tracked production data is the entire
+ * input. Creates queued media-generation jobs for every eligible tracked
+ * shot through the EXISTING generation-job service (with its C6.8 provider
+ * routing and capability validation) — no provider is ever called from this
+ * endpoint; the queued jobs are picked up by the existing executor.
+ *
+ * Ownership is enforced exactly like every other plan endpoint: the project
+ * must exist and belong to the caller (admin bypasses), and the plan must
+ * belong to that project (else an indistinguishable 404). The plan must be
+ * in `approved` status (409 otherwise) — nothing here approves, bypasses or
+ * changes plan status.
+ *
+ * Duplicate submission of the same approved plan is deduplicated per shot
+ * INSIDE a plan-row-lock transaction (SELECT ... FOR UPDATE on the plan
+ * row, the repository's completeJobWithAssetVersion pattern): concurrent
+ * requests for the same plan serialize, the loser observes the winner's
+ * committed jobs and reports them in `alreadyActive` instead of creating
+ * duplicates. Created job ids are appended to the plan payload's
+ * `generatedJobIds`. The response is a structured per-shot report; a
+ * partial outcome keeps every already-created job and says so. Full
+ * contract: docs/api/production-plan-generation.md.
+ */
+nestedProductionPlansRoute.post(
+  "/projects/:projectId/production-plans/:id/generate",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    try {
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const report = await planGenerationService.startGeneration({
+        projectId,
+        productionPlanId: id,
+      });
+      return c.json({ data: report });
+    } catch (error) {
+      if (error instanceof PlanGenerationError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to start plan media generation", error);
       return c.json(internal(), 500);
     }
   },
