@@ -115,6 +115,65 @@
         </div>
       </BasePanel>
 
+      <!-- Execution tracking (C8.3): read-only view of generated jobs -->
+      <BasePanel
+        title="Media Generation Tracking"
+        description="Current state of the generation jobs created from this plan. This view never starts, submits, or polls generation — use the Jobs workspace for that."
+        class="tracking-panel"
+      >
+        <div class="tracking-controls">
+          <BaseButton
+            size="sm"
+            variant="secondary"
+            :loading="trackingRefreshing"
+            :disabled="trackingLoading"
+            @click="onRefreshTracking"
+          >
+            Refresh Tracking
+          </BaseButton>
+          <span v-if="tracking" class="tracking-summary">
+            {{ trackingSummary }}
+          </span>
+        </div>
+        <ErrorBanner v-if="trackingError" :message="trackingError" @retry="loadExecutionTracking()" />
+
+        <LoadingState v-if="trackingLoading && !tracking" label="Loading execution tracking…" />
+        <EmptyState
+          v-else-if="trackingEmpty"
+          title="No generated media yet"
+          description="Once this plan starts media generation, its jobs and outputs appear here."
+        />
+        <div v-else-if="tracking" class="tracking-list" role="list">
+          <div
+            v-for="record in tracking.records"
+            :key="record.jobId"
+            class="tracking-row"
+            role="listitem"
+          >
+            <div class="tracking-main">
+              <span class="job-label">Job {{ shortId(record.jobId) }}</span>
+              <StatusPill v-if="record.status" :tone="jobTone(record.status)">{{ record.status }}</StatusPill>
+              <StatusPill v-else :tone="recordTone(record.recordState)">{{ record.recordState }}</StatusPill>
+              <span v-if="record.progress !== null" class="tracking-progress">
+                {{ record.progress }}%
+              </span>
+            </div>
+            <p v-if="record.reason" class="tracking-reason">{{ record.reason }}</p>
+            <p v-if="record.error" class="tracking-error">{{ record.error }}</p>
+            <p v-if="record.output" class="tracking-output">
+              Output: {{ record.output.assetName || `Asset ${shortId(record.output.assetId)}` }} ·
+              v{{ record.output.version }}
+              <NuxtLink
+                :to="`/app/projects/${projectId}/assets?assetId=${record.output.assetId}`"
+                class="output-link"
+              >
+                Open in Assets →
+              </NuxtLink>
+            </p>
+          </div>
+        </div>
+      </BasePanel>
+
       <!-- Generated results overview -->
       <BasePanel
         title="Planned Content"
@@ -200,11 +259,13 @@ import { computed, onMounted, ref } from "vue";
 import { statusTone } from "../../../../../composables/useStatusTone";
 import {
   PRODUCTION_PLAN_ORCHESTRATION_STAGES,
+  type PlanTrackingRecord,
   type ProductionPlanOrchestrationStage,
 } from "@icooro/shared";
 import {
   apiErrorMessage,
   ORCHESTRATION_STAGE_LABELS,
+  payloadGeneratedJobIds,
   payloadPromptedShotIds,
   payloadSceneIds,
   payloadShotIdsByScene,
@@ -218,11 +279,16 @@ const {
   loading,
   refreshing,
   orchestrating,
+  tracking,
+  trackingLoading,
+  trackingRefreshing,
+  trackingError,
   error,
   report,
   projectId,
   planId,
   loadPlan,
+  loadExecutionTracking,
   orchestratePlan,
 } = useProductionPlans();
 
@@ -272,6 +338,88 @@ const shotCount = computed(() => {
 const promptedCount = computed(() =>
   plan.value ? payloadPromptedShotIds(plan.value.plan ?? {}).length : 0,
 );
+
+/** C8.1 tracked job ids recorded in the plan payload. */
+const generatedJobCount = computed(() =>
+  plan.value ? payloadGeneratedJobIds(plan.value.plan ?? {}).length : 0,
+);
+
+/**
+ * Empty view: no report yet, or a report with zero tracked records —
+ * covers both "plan never started generation" and "report says empty".
+ */
+const trackingEmpty = computed(
+  () =>
+    (!tracking.value && generatedJobCount.value === 0) ||
+    (tracking.value !== null && tracking.value.records.length === 0),
+);
+
+/**
+ * One-line summary of the tracking report, from the shared contract's
+ * own counts (never re-derived from raw records in the UI).
+ */
+const trackingSummary = computed(() => {
+  const report = tracking.value;
+  if (!report) return "";
+  const c = report.counts;
+  if (c.total === 0) return "No generation jobs tracked by this plan yet.";
+  const parts: string[] = [];
+  if (c.active > 0) parts.push(`${c.active} active`);
+  if (c.completed > 0) parts.push(`${c.completed} completed`);
+  if (c.failed > 0) parts.push(`${c.failed} failed`);
+  if (c.cancelled > 0) parts.push(`${c.cancelled} cancelled`);
+  if (c.missing > 0) parts.push(`${c.missing} missing`);
+  if (c.invalid > 0) parts.push(`${c.invalid} invalid`);
+  return `${c.total} tracked job(s): ${parts.join(", ")}`;
+});
+
+function shortId(id: string): string {
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
+function jobTone(status: string): "success" | "warning" | "danger" | "info" {
+  switch ((status || "").toLowerCase()) {
+    case "completed":
+      return "success";
+    case "processing":
+    case "submitted":
+    case "downloading":
+      return "info";
+    case "failed":
+    case "cancelled":
+      return "danger";
+    case "queued":
+      return "warning";
+    default:
+      return "info";
+  }
+}
+
+function recordTone(
+  state: PlanTrackingRecord["recordState"],
+): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (state) {
+    case "active":
+      return "info";
+    case "terminal":
+      return "neutral";
+    case "missing":
+    case "invalid":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+/**
+ * User-triggered refresh only: re-reads the tracking endpoint, which is
+ * strictly read-only. No timer, no automatic polling — refreshing can
+ * never start or advance generation.
+ */
+async function onRefreshTracking() {
+  if (trackingRefreshing.value || trackingLoading.value) return;
+  await loadExecutionTracking({ silent: true });
+}
 
 const failureReasons = computed(() =>
   report.value
@@ -369,7 +517,16 @@ async function onOrchestrate() {
   }
 }
 
-onMounted(() => loadPlan());
+onMounted(async () => {
+  await loadPlan();
+  // Initial tracking fetch is read-only: the GET .../execution endpoint
+  // performs no writes and never contacts providers, so mounting the
+  // tracking panel cannot trigger execution or polling. The plan payload
+  // must be loaded first — it is the source of the tracked job ids.
+  if (generatedJobCount.value > 0) {
+    loadExecutionTracking();
+  }
+});
 </script>
 
 <style scoped>
@@ -589,5 +746,80 @@ onMounted(() => loadPlan());
   display: flex;
   justify-content: center;
   margin-bottom: 0.75rem;
+}
+
+.tracking-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.tracking-summary {
+  font-size: 0.85rem;
+  color: #556968;
+}
+
+.tracking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.tracking-row {
+  border: 1px solid #e1ebe9;
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  background: #fbfdfd;
+}
+
+.tracking-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.job-label {
+  font-weight: 700;
+  color: #17212b;
+  font-size: 0.9rem;
+}
+
+.tracking-progress {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #243da8;
+}
+
+.tracking-reason {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: #68777c;
+}
+
+.tracking-error {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: #a62e25;
+}
+
+.tracking-output {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: #435458;
+}
+
+.output-link {
+  margin-left: 0.35rem;
+  font-weight: 600;
+  color: #176b65;
+  text-decoration: none;
+}
+
+.output-link:hover {
+  text-decoration: underline;
 }
 </style>

@@ -706,3 +706,106 @@ export interface PlanExecutionReport {
   /** Tracked jobs whose submission was attempted and failed. */
   failed: PlanExecutionItem[];
 }
+
+// ---------------------------------------------------------------------------
+// C8.3 — Read-only execution tracking for plan-generated jobs
+// ---------------------------------------------------------------------------
+
+/**
+ * Record-state buckets of one tracked generation job in the C8.3 tracking
+ * report. They re-use the repository's existing vocabulary instead of
+ * inventing new job states:
+ * - "active": queued/submitted/processing/downloading — work still exists.
+ * - "terminal": completed/failed/cancelled — the row reached a final state.
+ * - "missing": the tracked id no longer resolves to any `ai_jobs` row.
+ * - "invalid": the row resolves but no longer matches the plan's context
+ *   (project, plan provenance, or job type) — reported, never trusted.
+ */
+export type PlanTrackingRecordState = "active" | "terminal" | "missing" | "invalid";
+
+/**
+ * Lifecycle sub-status of one tracked job, derived from the REAL `ai_jobs`
+ * status values (no new statuses). Non-null only when the job row resolved.
+ */
+export type PlanTrackingRecordStatus =
+  | "queued"
+  | "submitted"
+  | "processing"
+  | "downloading"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+/**
+ * One tracked generation job's persisted execution state, as returned by
+ * GET .../production-plans/:id/execution (C8.3). Every field is read from
+ * the `ai_jobs` row (and its linked asset rows) — nothing is inferred from
+ * status alone, nothing is written, and no provider is contacted.
+ */
+export interface PlanTrackingRecord {
+  /** The tracked generation-job id (from the plan's `generatedJobIds`). */
+  jobId: string;
+  recordState: PlanTrackingRecordState;
+  /** The job's lifecycle status at read time; null when the row is gone. */
+  status: PlanTrackingRecordStatus | null;
+  /** Persisted progress percentage (0–100); null when the row is gone. */
+  progress: number | null;
+  /** Shot/scene context as persisted on the job row; null when unusable. */
+  shotId: string | null;
+  sceneId: string | null;
+  /**
+   * The persisted asset/version output of a completed job, exposed only
+   * through the REAL job→asset-version (and asset-version→asset) links.
+   * Null whenever no complete, project-consistent link exists — never
+   * synthesized from job status.
+   */
+  output: {
+    assetVersionId: string;
+    assetId: string;
+    assetName: string;
+    assetType: string;
+    version: number;
+    mimeType: string | null;
+    fileSize: number | null;
+    status: string;
+  } | null;
+  /**
+   * The sanitized, persisted error of a failed job (already sanitized by
+   * the executor when it stored it). Null for every other record state.
+   */
+  error: string | null;
+  /**
+   * Human reason for missing / invalid records (mirrors the C8.2 skip
+   * conventions). Absent for active/terminal records.
+   */
+  reason?: string | undefined;
+  /** The job row's last update time, when the row resolved. */
+  updatedAt: string | null;
+}
+
+/**
+ * The response payload of GET .../production-plans/:id/execution (C8.3):
+ * the current persisted state of every generation job the C8.1 entry point
+ * created from this plan. Strictly read-only: no jobs are created or
+ * updated, no provider is called, and the plan is never modified. Records
+ * keep the stable `generatedJobIds` order, and partial/missing/invalid
+ * rows are reported rather than hidden.
+ */
+export interface PlanTrackingReport {
+  productionPlanId: string;
+  /** Aggregate: active work present → active; else completed/failed by outcomes. */
+  status: "active" | "completed" | "failed" | "empty";
+  jobType: GenerationJobType;
+  /** One record per tracked id, in the plan's stable `generatedJobIds` order. */
+  records: PlanTrackingRecord[];
+  /** Concise counts derived from `records`. */
+  counts: {
+    total: number;
+    active: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    missing: number;
+    invalid: number;
+  };
+}

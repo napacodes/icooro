@@ -2,6 +2,7 @@ import { computed, ref, type ComputedRef, type Ref } from "vue";
 import {
   ApiError,
   type OrchestrationReport,
+  type PlanTrackingReport,
   type ProductionPlanOrchestrationStage,
 } from "@icooro/shared";
 
@@ -81,6 +82,11 @@ export interface UseProductionPlansState {
   refreshing: Ref<boolean>;
   creating: Ref<boolean>;
   orchestrating: Ref<boolean>;
+  /** C8.3 read-only execution-tracking report for the current plan. */
+  tracking: Ref<PlanTrackingReport | null>;
+  trackingLoading: Ref<boolean>;
+  trackingRefreshing: Ref<boolean>;
+  trackingError: Ref<string | null>;
   error: Ref<string | null>;
   report: Ref<OrchestrationReport | null>;
   projectId: ComputedRef<string>;
@@ -92,6 +98,9 @@ export interface UseProductionPlansState {
     planId: string,
     to?: ProductionPlanOrchestrationStage | undefined,
   ) => Promise<OrchestrationReport>;
+  loadExecutionTracking: (options?: {
+    silent?: boolean;
+  }) => Promise<PlanTrackingReport | null>;
 }
 
 export function useProductionPlans(): UseProductionPlansState {
@@ -107,6 +116,10 @@ export function useProductionPlans(): UseProductionPlansState {
   const refreshing = ref(false);
   const creating = ref(false);
   const orchestrating = ref(false);
+  const tracking = ref<PlanTrackingReport | null>(null);
+  const trackingLoading = ref(false);
+  const trackingRefreshing = ref(false);
+  const trackingError = ref<string | null>(null);
   const error = ref<string | null>(null);
   const report = ref<OrchestrationReport | null>(null);
 
@@ -201,6 +214,39 @@ export function useProductionPlans(): UseProductionPlansState {
     }
   }
 
+  /**
+   * C8.3 — fetches the plan's read-only execution-tracking report from the
+   * GET .../execution endpoint. The endpoint is strictly read-only (no job
+   * updates, no provider calls, no polling), so calling it can never start
+   * or advance generation — it only re-reads what the existing lifecycle
+   * has already persisted. `silent` keeps the current records mounted
+   * while refreshing (used by the user-triggered refresh button).
+   */
+  async function loadExecutionTracking(
+    options: { silent?: boolean } = {},
+  ): Promise<PlanTrackingReport | null> {
+    if (!projectId.value || !planId.value) return null;
+    if (options.silent) {
+      trackingRefreshing.value = true;
+    } else {
+      trackingLoading.value = true;
+    }
+    trackingError.value = null;
+    try {
+      const result = await api.get<PlanTrackingReport>(
+        `/projects/${projectId.value}/production-plans/${planId.value}/execution`,
+      );
+      tracking.value = result;
+      return result;
+    } catch (err: any) {
+      trackingError.value = err?.message || "Failed to load execution tracking";
+      return null;
+    } finally {
+      trackingLoading.value = false;
+      trackingRefreshing.value = false;
+    }
+  }
+
   return {
     plans,
     plan,
@@ -208,6 +254,10 @@ export function useProductionPlans(): UseProductionPlansState {
     refreshing,
     creating,
     orchestrating,
+    tracking,
+    trackingLoading,
+    trackingRefreshing,
+    trackingError,
     error,
     report,
     projectId,
@@ -216,6 +266,7 @@ export function useProductionPlans(): UseProductionPlansState {
     loadPlan,
     createPlan,
     orchestratePlan,
+    loadExecutionTracking,
   };
 }
 
@@ -252,4 +303,9 @@ export function payloadShotIdsByScene(payload: Record<string, unknown>): Record<
 
 export function payloadPromptedShotIds(payload: Record<string, unknown>): string[] {
   return stringArray(payload.promptedShotIds);
+}
+
+/** Extract the plan payload's C8.1 tracked generation-job ids. */
+export function payloadGeneratedJobIds(payload: Record<string, unknown>): string[] {
+  return stringArray(payload.generatedJobIds);
 }

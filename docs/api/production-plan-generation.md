@@ -565,3 +565,246 @@ Standard error envelope `{ "error": { "code", "message" } }`:
 ```json
 { "error": { "code": "NOT_FOUND", "message": "Production plan not found" } }
 ```
+
+---
+
+# GET /projects/:projectId/production-plans/:id/execution
+
+C8.3 — read-only execution tracking for the generation jobs C8.1 created
+from a Production Plan. It reports the CURRENT PERSISTED STATE of those jobs
+— lifecycle status, progress, sanitized failure details, and the real
+asset/asset-version links of completed jobs — so the Production Plan UI can
+show progress without ever touching the execution machinery. It creates no
+jobs, submits nothing, polls no provider, downloads nothing, regenerates
+nothing, and never changes the plan's payload or approval state.
+
+## Method and route
+
+```
+GET /api/v1/projects/:projectId/production-plans/:planId/execution
+```
+
+## Authentication and ownership
+
+- Requires an authenticated session (session cookie); unauthenticated
+  requests get `401`.
+- The project must exist and belong to the caller. A missing or foreign
+  project is an indistinguishable `404` (`"Project not found"`). Admin
+  users bypass the ownership check.
+- The plan must belong to the requested project. A plan addressed under a
+  different project is an indistinguishable `404`
+  (`"Production plan not found"`).
+
+No approved-plan gate applies: tracking is a read, so it works for plans in
+any status.
+
+## Request body
+
+None. The job ids reported come exclusively from the plan payload's durable
+`generatedJobIds` tracking list (written by C8.1's `/generate`) — the same
+source of truth C8.2 executes from. Caller-supplied job ids are never
+accepted (a GET has no body), so the endpoint cannot be aimed at arbitrary
+jobs. An empty/absent list is not an error: a plan that has not started
+media generation reports `status: "empty"` with an empty `records` array.
+
+## Job resolution and per-record safety
+
+Tracked ids are resolved with a batched read (no N+1) and classified per
+record, following the C8.2 conventions:
+
+| Condition | Record state |
+| --- | --- |
+| Row resolves, status `queued`/`submitted`/`processing`/`downloading` | `active` |
+| Row resolves, status `completed`/`failed`/`cancelled` | `terminal` |
+| Tracked id no longer resolves to any `ai_jobs` row | `missing` |
+| Row's project, `metadata.productionPlanId`, or job type no longer matches the plan's context | `invalid` |
+| Row status is not a known lifecycle value | `invalid` |
+
+Missing and invalid records carry a safe, relationship-specific `reason`
+and never expose unrelated rows or foreign identifiers. Invalid records
+report the row's lifecycle `status` (the C8.2 context-skip convention) but
+no shot/scene context and no output. The read is fail-safe, never fail-
+deadly: one malformed record never affects its neighbours.
+
+## Completed outputs
+
+A completed job's output is exposed ONLY through the real persisted links
+that `POST /jobs/:id/persist-result` wrote (`ai_jobs.asset_version_id` →
+`asset_versions`, the version's `asset_id` → `assets`, and the asset's
+project ownership). Nothing is inferred from job status alone, no URL is
+invented, and a completed job without a persisted link simply reports
+`output: null`. Broken or cross-project links are reported without an
+output rather than fabricating one.
+
+## Read-only guarantees
+
+The endpoint performs no writes of any kind: no `ai_jobs` updates, no plan
+payload or status writes, no asset writes, and no state transitions. No
+executor, provider adapter, polling, or download path is ever invoked —
+repeated GETs return identical data (as long as nothing else changed it)
+and can never start, submit, or advance generation.
+
+## Response
+
+`200 OK` with the standard success envelope:
+
+```json
+{ "data": { ...PlanTrackingReport } }
+```
+
+### PlanTrackingReport fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `productionPlanId` | `string` | The plan whose jobs are tracked. |
+| `status` | `"active" \| "completed" \| "failed" \| "empty"` | Aggregate: any active work → `active`; else any completed → `completed`; else any failed/cancelled → `failed`; else `empty`. |
+| `jobType` | `GenerationJobType` | Always `"text-to-video"` for this endpoint. |
+| `records` | `PlanTrackingRecord[]` | One record per tracked id, in the plan's stable `generatedJobIds` order. |
+| `counts` | object | `{ total, active, completed, failed, cancelled, missing, invalid }` derived from `records`. |
+
+Each `PlanTrackingRecord` is:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `jobId` | `string` | The tracked generation-job id. |
+| `recordState` | `"active" \| "terminal" \| "missing" \| "invalid"` | Record-state bucket (see table above). |
+| `status` | lifecycle status or `null` | The job's persisted lifecycle status; `null` when the row is gone or unknown. |
+| `progress` | `number \| null` | Persisted progress percentage (0–100); `null` when the row is gone. |
+| `shotId` / `sceneId` | `string \| null` | Persisted context of the job row; `null` for missing/invalid records. |
+| `output` | object or `null` | `{ assetVersionId, assetId, assetName, assetType, version, mimeType, fileSize, status }` — only when the real, project-consistent asset-version link exists. |
+| `error` | `string \| null` | The sanitized, persisted error of a `failed` job; `null` otherwise. |
+| `reason` | `string` (optional) | Safe reason for `missing`/`invalid` records. |
+| `updatedAt` | `string \| null` | The job row's last update time (ISO), when the row resolved. |
+
+## Examples
+
+### Mixed lifecycle states
+
+Request:
+
+```
+GET /api/v1/projects/p_1/production-plans/plan_1/execution
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "productionPlanId": "plan_1",
+    "status": "active",
+    "jobType": "text-to-video",
+    "records": [
+      {
+        "jobId": "job_1",
+        "recordState": "active",
+        "status": "processing",
+        "progress": 45,
+        "shotId": "shot_1",
+        "sceneId": "scene_1",
+        "output": null,
+        "error": null,
+        "updatedAt": "2026-09-30T10:00:00.000Z"
+      },
+      {
+        "jobId": "job_2",
+        "recordState": "terminal",
+        "status": "completed",
+        "progress": 100,
+        "shotId": "shot_2",
+        "sceneId": "scene_1",
+        "output": {
+          "assetVersionId": "av_2",
+          "assetId": "ast_2",
+          "assetName": "Mozy shot 2",
+          "assetType": "video",
+          "version": 1,
+          "mimeType": "video/mp4",
+          "fileSize": 98304,
+          "status": "ready"
+        },
+        "error": null,
+        "updatedAt": "2026-09-30T09:58:00.000Z"
+      },
+      {
+        "jobId": "job_3",
+        "recordState": "terminal",
+        "status": "failed",
+        "progress": 0,
+        "shotId": "shot_3",
+        "sceneId": "scene_2",
+        "output": null,
+        "error": "ProviderError: upstream exploded apiKey=[redacted] [url]",
+        "updatedAt": "2026-09-30T09:55:00.000Z"
+      }
+    ],
+    "counts": { "total": 3, "active": 1, "completed": 1, "failed": 1, "cancelled": 0, "missing": 0, "invalid": 0 }
+  }
+}
+```
+
+### Partial results with a missing job
+
+```json
+{
+  "data": {
+    "productionPlanId": "plan_1",
+    "status": "active",
+    "jobType": "text-to-video",
+    "records": [
+      {
+        "jobId": "job_1",
+        "recordState": "active",
+        "status": "queued",
+        "progress": 0,
+        "shotId": "shot_1",
+        "sceneId": "scene_1",
+        "output": null,
+        "error": null,
+        "updatedAt": "2026-09-30T10:00:00.000Z"
+      },
+      {
+        "jobId": "job_deleted",
+        "recordState": "missing",
+        "status": null,
+        "progress": null,
+        "shotId": null,
+        "sceneId": null,
+        "output": null,
+        "error": null,
+        "reason": "The tracked generation job no longer exists.",
+        "updatedAt": null
+      }
+    ],
+    "counts": { "total": 2, "active": 1, "completed": 0, "failed": 0, "cancelled": 0, "missing": 1, "invalid": 0 }
+  }
+}
+```
+
+### Empty tracking list
+
+A plan that has not started media generation:
+
+```json
+{
+  "data": {
+    "productionPlanId": "plan_1",
+    "status": "empty",
+    "jobType": "text-to-video",
+    "records": [],
+    "counts": { "total": 0, "active": 0, "completed": 0, "failed": 0, "cancelled": 0, "missing": 0, "invalid": 0 }
+  }
+}
+```
+
+### Error responses
+
+Standard error envelope `{ "error": { "code", "message" } }`:
+
+```json
+{ "error": { "code": "NOT_FOUND", "message": "Production plan not found" } }
+```
+
+```json
+{ "error": { "code": "NOT_FOUND", "message": "Project not found" } }
+```
