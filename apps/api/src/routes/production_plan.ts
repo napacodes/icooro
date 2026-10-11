@@ -36,6 +36,10 @@ import {
   PlanExecutionError,
 } from "../services/plan_execution.js";
 import {
+  planTrackingService,
+  PlanTrackingError,
+} from "../services/plan_tracking.js";
+import {
   createProductionPlanSchema,
   updateProductionPlanSchema,
   orchestratePlanSchema,
@@ -571,6 +575,69 @@ nestedProductionPlansRoute.post(
         return c.json(bad(error.message, error.status), error.status);
       }
       console.error("Failed to start plan execution", error);
+      return c.json(internal(), 500);
+    }
+  },
+);
+
+/**
+ * C8.3 — Read-only execution tracking for plan-generated jobs.
+ *
+ * GET /projects/:projectId/production-plans/:id/execution
+ *
+ * Reports the current persisted state of the generation jobs the C8.1
+ * entry point created from this plan (`generatedJobIds` payload tracking
+ * — never caller-supplied ids): lifecycle status, progress, the sanitized
+ * persisted error of failed jobs, and the real asset/asset-version links
+ * of completed jobs. Strictly read-only: no jobs are created or updated,
+ * no provider is ever contacted, no polling or downloading happens, and
+ * the plan's payload and status are never written. Ownership is enforced
+ * exactly like every other plan endpoint (404 for missing or foreign
+ * projects/plans). Full contract: docs/api/production-plan-generation.md.
+ */
+nestedProductionPlansRoute.get(
+  "/projects/:projectId/production-plans/:id/execution",
+  async (c) => {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    try {
+      // Identity first, fail closed: the ownership comparison below trusts
+      // `userId` to be caller-owned. Session middleware normally guarantees
+      // it (and `requireUser()` already 401s unauthenticated requests on
+      // /api/v1/projects/*), but if these guards were ever reordered or a
+      // caller session resolved without an id, skipping would make the
+      // check degenerate into a plain existence probe. 401 —
+      // indistinguishable in wording from the standard rejection, admin
+      // access is preserved (an authenticated admin always has an id).
+      const userId = c.get("userId") as string | undefined;
+      const userRole = (c.get("userRole") as "user" | "admin" | undefined) ?? "user";
+      if (!userId) {
+        return c.json(
+          { error: { code: "UNAUTHORIZED", message: "Authentication required" } },
+          401,
+        );
+      }
+      // Project ownership: the C7.1 mechanism, byte-identical to the other
+      // plan endpoints (404 for missing or foreign projects).
+      const [project] = await getDb()
+        .select({ id: projects.id, ownerId: projects.ownerId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (!project || (userId && userRole !== "admin" && project.ownerId !== userId)) {
+        return c.json(bad("Project not found", 404), 404);
+      }
+
+      const report = await planTrackingService.trackExecution({
+        projectId,
+        productionPlanId: id,
+      });
+      return c.json({ data: report });
+    } catch (error) {
+      if (error instanceof PlanTrackingError) {
+        return c.json(bad(error.message, error.status), error.status);
+      }
+      console.error("Failed to read plan execution tracking", error);
       return c.json(internal(), 500);
     }
   },
