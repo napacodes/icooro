@@ -24,7 +24,7 @@
       </div>
     </div>
 
-    <LoadingState v-if="loadingEpisodes" message="Loading project episodes…" />
+    <LoadingState v-if="loadingEpisodes" label="Loading project episodes…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"
@@ -86,7 +86,7 @@
           <h3>Scenes in EP {{ currentEpisode?.episodeNumber }} ({{ scenes.length }})</h3>
         </div>
 
-        <LoadingState v-if="loadingScenes" message="Loading scenes…" />
+        <LoadingState v-if="loadingScenes" label="Loading scenes…" />
         <EmptyState
           v-else-if="scenes.length === 0"
           title="No scenes in this episode yet"

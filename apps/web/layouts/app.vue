@@ -17,40 +17,21 @@
         <NuxtLink to="/app">Dashboard</NuxtLink>
         <NuxtLink to="/app/projects">Projects</NuxtLink>
         <NuxtLink to="/app/projects/new">Create project</NuxtLink>
-        <span class="section-label">Production</span>
-        <NuxtLink
-          :to="activeProjectId ? `/app/projects/${activeProjectId}/story` : '/app/projects'"
-          :aria-disabled="!activeProjectId"
-          :class="{ placeholder: !activeProjectId }"
-        >Story</NuxtLink>
-        <NuxtLink
-          :to="activeProjectId ? `/app/projects/${activeProjectId}/episodes` : '/app/projects'"
-          :aria-disabled="!activeProjectId"
-          :class="{ placeholder: !activeProjectId }"
-        >Episodes</NuxtLink>
-        <NuxtLink
-          :to="activeProjectId ? `/app/projects/${activeProjectId}/scenes` : '/app/projects'"
-          :aria-disabled="!activeProjectId"
-          :class="{ placeholder: !activeProjectId }"
-        >Scenes</NuxtLink>
-        <NuxtLink
-          :to="activeProjectId ? `/app/projects/${activeProjectId}/shots` : '/app/projects'"
-          :aria-disabled="!activeProjectId"
-          :class="{ placeholder: !activeProjectId }"
-        >Shots</NuxtLink>
-        <NuxtLink
-          :to="activeProjectId ? `/app/projects/${activeProjectId}/assets` : '/app/projects'"
-          :aria-disabled="!activeProjectId"
-          :class="{ placeholder: !activeProjectId }"
-        >Assets</NuxtLink>
-        <NuxtLink
-          :to="activeProjectId ? `/app/projects/${activeProjectId}/generations` : '/app/projects'"
-          :aria-disabled="!activeProjectId"
-          :class="{ placeholder: !activeProjectId }"
-        >Generations</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Timeline</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Export</NuxtLink>
-        <NuxtLink to="/app/projects" aria-disabled="true" class="placeholder">Settings</NuxtLink>
+
+        <!--
+          Project orientation (F3.1).
+          The project's own sections are navigated from the workspace shell
+          (`components/workspace/WorkspaceNav.vue`), so the layout does not
+          repeat them as a second link list. Instead, while a project is
+          active, it shows which section the user is currently in — derived
+          from the same canonical registry — and links back into it.
+        -->
+        <template v-if="activeSection">
+          <span class="section-label">Current project</span>
+          <NuxtLink class="project-context" :to="activeSectionPath">
+            {{ activeSection.label }}
+          </NuxtLink>
+        </template>
       </aside>
       <main class="content">
         <slot />
@@ -62,16 +43,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { APP_NAME } from "@icooro/shared";
+import { projectIdFromPath, workspaceSectionForPath, workspaceSectionPath } from "~/workspace/sections";
 
 const auth = useAuth();
 const route = useRoute();
 
-const activeProjectId = computed(() => {
-  const match = route.path.match(/^\/app\/projects\/([^\/]+)/);
-  if (match && match[1] !== "new") {
-    return match[1];
-  }
-  return null;
+/**
+ * The section the current route belongs to, or `null` when the user is not
+ * inside a project (dashboard, projects list, project creation).
+ */
+const activeSection = computed(() => workspaceSectionForPath(route.path));
+
+/** Deep link back into the section the user is currently working in. */
+const activeSectionPath = computed(() => {
+  const section = activeSection.value;
+  const projectId = projectIdFromPath(route.path);
+  if (!section || !projectId) return "/app/projects";
+  return workspaceSectionPath(projectId, section.slug);
 });
 
 async function onLogout() {
@@ -167,10 +155,6 @@ async function onLogout() {
   background: #176b65;
   color: #fff;
 }
-.placeholder {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 .section-label {
   margin-top: 0.75rem;
   padding: 0.5rem 0.75rem;
@@ -178,6 +162,11 @@ async function onLogout() {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #68777c;
+}
+.project-context:focus-visible,
+.sidebar a:focus-visible {
+  outline: 2px solid #176b65;
+  outline-offset: 2px;
 }
 .content {
   flex: 1;

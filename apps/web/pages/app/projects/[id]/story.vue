@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <LoadingState v-if="loading" message="Loading creative world entities…" />
+    <LoadingState v-if="loading" label="Loading creative world entities…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"

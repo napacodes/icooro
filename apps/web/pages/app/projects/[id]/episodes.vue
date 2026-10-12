@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <LoadingState v-if="loading" message="Loading episodes…" />
+    <LoadingState v-if="loading" label="Loading episodes…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"
