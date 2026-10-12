@@ -135,7 +135,12 @@
             {{ trackingSummary }}
           </span>
         </div>
-        <ErrorBanner v-if="trackingError" :message="trackingError" @retry="loadExecutionTracking()" />
+        <ErrorBanner
+          v-if="trackingError"
+          :message="trackingError"
+          retry-label="Retry"
+          @retry="loadExecutionTracking()"
+        />
 
         <LoadingState v-if="trackingLoading && !tracking" label="Loading execution tracking…" />
         <EmptyState

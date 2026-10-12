@@ -28,7 +28,7 @@
       </div>
     </div>
 
-    <LoadingState v-if="loadingEpisodes" message="Loading production structure…" />
+    <LoadingState v-if="loadingEpisodes" label="Loading production structure…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"

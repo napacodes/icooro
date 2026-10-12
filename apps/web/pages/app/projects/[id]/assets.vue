@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <LoadingState v-if="loading" message="Loading media assets…" />
+    <LoadingState v-if="loading" label="Loading media assets…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"
@@ -154,7 +154,7 @@
               </BaseButton>
             </form>
 
-            <LoadingState v-if="loadingVersions" message="Loading versions…" />
+            <LoadingState v-if="loadingVersions" label="Loading versions…" />
             <EmptyState
               v-else-if="versions.length === 0"
               title="No versions registered"

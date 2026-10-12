@@ -15,7 +15,7 @@
       </BaseButton>
     </div>
 
-    <LoadingState v-if="loading" message="Loading generation jobs…" />
+    <LoadingState v-if="loading" label="Loading generation jobs…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"

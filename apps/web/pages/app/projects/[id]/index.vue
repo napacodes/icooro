@@ -1,6 +1,6 @@
 <template>
   <div class="redirecting">
-    <LoadingState message="Opening workspace…" />
+    <LoadingState label="Opening workspace…" />
   </div>
 </template>
 

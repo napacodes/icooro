@@ -4,7 +4,7 @@
       <NuxtLink to="/app/projects" class="back-link">← Projects</NuxtLink>
     </nav>
 
-    <LoadingState v-if="loading" message="Loading project workspace…" />
+    <LoadingState v-if="loading" label="Loading project workspace…" />
     <ErrorBanner
       v-else-if="error"
       :message="error"
@@ -79,18 +79,8 @@
         </form>
       </BasePanel>
 
-      <!-- Navigation Tabs for the 6 Workspace Sections -->
-      <nav class="workspace-tabs" aria-label="Workspace sections">
-        <NuxtLink
-          v-for="section in sections"
-          :key="section.slug"
-          :to="`/app/projects/${projectId}/${section.slug}`"
-          class="tab-link"
-          active-class="active"
-        >
-          {{ section.label }}
-        </NuxtLink>
-      </nav>
+      <!-- Project section navigation, from the canonical section registry. -->
+      <WorkspaceNav :project-id="projectId" />
 
       <!-- Section Content Rendered by Child Route -->
       <section class="workspace-content">
@@ -112,6 +102,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted } from "vue";
+import WorkspaceNav from "~/components/workspace/WorkspaceNav.vue";
 
 definePageMeta({ layout: "app" });
 
@@ -166,16 +157,6 @@ const statusOptions = [
   { label: "In Progress", value: "in_progress" },
   { label: "Completed", value: "completed" },
   { label: "Archived", value: "archived" },
-];
-
-const sections = [
-  { slug: "plans", label: "Plans" },
-  { slug: "story", label: "Story" },
-  { slug: "episodes", label: "Episodes" },
-  { slug: "scenes", label: "Scenes" },
-  { slug: "shots", label: "Shots" },
-  { slug: "assets", label: "Assets" },
-  { slug: "generations", label: "Generations" },
 ];
 
 watch(
@@ -285,33 +266,6 @@ async function onDeleteProject() {
   display: flex;
   gap: 0.75rem;
   margin-top: 0.5rem;
-}
-
-.workspace-tabs {
-  display: flex;
-  gap: 0.5rem;
-  border-bottom: 2px solid #e1ebe9;
-  margin-bottom: 1.5rem;
-  overflow-x: auto;
-}
-
-.tab-link {
-  padding: 0.65rem 1.25rem;
-  color: #556968;
-  text-decoration: none;
-  font-weight: 600;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -2px;
-  transition: all 0.15s ease;
-}
-
-.tab-link:hover {
-  color: #176b65;
-}
-
-.tab-link.active {
-  color: #176b65;
-  border-bottom-color: #176b65;
 }
 
 .workspace-content {
