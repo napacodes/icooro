@@ -1,5 +1,16 @@
 <script setup lang="ts">
-import { APP_NAME, type Project, type PublicUser } from "@icooro/shared";
+/**
+ * User dashboard (F2).
+ *
+ * A thin composition layer over the existing auth session and the
+ * `GET /projects` API contract. All presentation lives in the reusable
+ * `components/dashboard/*` components, which are styled with the F1 semantic
+ * tokens. No statistics are derived beyond the real project count.
+ */
+import type { Project, PublicUser } from "@icooro/shared";
+import DashboardHeader from "~/components/dashboard/DashboardHeader.vue";
+import DashboardSummary from "~/components/dashboard/DashboardSummary.vue";
+import ProjectCard from "~/components/dashboard/ProjectCard.vue";
 
 definePageMeta({ layout: "app" });
 defineOptions({ name: "UserDashboardPage" });
@@ -12,27 +23,8 @@ const projects = ref<Project[]>([]);
 const loading = ref(true);
 const error = ref("");
 
-function statusTone(status: string): "neutral" | "success" | "warning" | "danger" | "info" {
-  switch (status.toLowerCase()) {
-    case "active":
-    case "completed":
-    case "ready":
-      return "success";
-    case "in_progress":
-    case "processing":
-      return "info";
-    case "draft":
-    case "pending":
-      return "warning";
-    case "archived":
-    case "failed":
-      return "danger";
-    default:
-      return "neutral";
-  }
-}
-
-const recentProjects = computed(() => projects.value.slice(0, 4));
+/** Most recently created projects first — the API already sorts by createdAt. */
+const recentProjects = computed(() => projects.value.slice(0, 6));
 
 async function loadDashboard() {
   loading.value = true;
@@ -51,284 +43,153 @@ onMounted(loadDashboard);
 
 <template>
   <section class="dashboard-page">
-    <header class="welcome-header">
-      <div class="welcome-text">
-        <p class="eyebrow">{{ APP_NAME }} Studio</p>
-        <h1>Dashboard</h1>
-        <p v-if="user" class="muted">
-          Welcome back, <strong>{{ user.name }}</strong>. Manage your creative workspaces and production assets.
-        </p>
-        <p v-else class="muted">Loading workspace…</p>
-      </div>
-      <div class="header-actions">
-        <NuxtLink to="/app/projects/new" class="btn-primary">New project</NuxtLink>
-      </div>
-    </header>
+    <DashboardHeader :user-name="user?.name ?? null" />
 
-    <div v-if="loading" class="state-container">
+    <div v-if="loading" class="state-block">
       <LoadingState label="Loading your dashboard…" />
     </div>
 
-    <div v-else-if="error" class="state-container">
+    <div v-else-if="error" class="state-block">
       <ErrorBanner :message="error" />
-      <BaseButton variant="secondary" size="sm" class="retry-btn" @click="loadDashboard">Retry</BaseButton>
+      <BaseButton variant="secondary" size="sm" class="retry-btn" @click="loadDashboard">
+        Retry
+      </BaseButton>
     </div>
 
-    <div v-else-if="projects.length === 0" class="empty-wrap">
-      <EmptyState
-        title="No projects yet"
-        description="You haven't created any storytelling projects yet. Start by setting up your first production workspace to plan episodes, scenes, and media assets."
-      >
-        <NuxtLink to="/app/projects/new" class="btn-primary">Create your first project</NuxtLink>
-      </EmptyState>
-    </div>
+    <EmptyState
+      v-else-if="projects.length === 0"
+      title="No projects yet"
+      description="You haven't created any storytelling projects yet. Start by setting up your first production workspace to plan episodes, scenes, and media assets."
+    >
+      <NuxtLink to="/app/projects/new" class="btn-primary">Create your first project</NuxtLink>
+    </EmptyState>
 
-    <div v-else class="dashboard-content">
-      <div class="summary-cards">
-        <div class="summary-card">
-          <span class="card-label">Total Projects</span>
-          <span class="card-value">{{ projects.length }}</span>
-          <NuxtLink to="/app/projects" class="card-link">View all projects →</NuxtLink>
-        </div>
-        <div class="summary-card action-card">
-          <span class="card-label">Start Something New</span>
-          <p class="action-desc">Launch a fresh workspace for your next production.</p>
-          <NuxtLink to="/app/projects/new" class="btn-primary btn-sm">Create project</NuxtLink>
-        </div>
-      </div>
+    <template v-else>
+      <DashboardSummary :project-count="projects.length" />
 
-      <div class="recent-section">
-        <div class="section-heading">
-          <h2>Recent Projects</h2>
-          <NuxtLink to="/app/projects" class="view-all-link">View all ({{ projects.length }})</NuxtLink>
+      <section class="recent" aria-labelledby="recent-projects-heading">
+        <div class="section-head">
+          <h2 id="recent-projects-heading">Recent Projects</h2>
+          <NuxtLink to="/app/projects" class="section-link">
+            View all ({{ projects.length }})
+          </NuxtLink>
         </div>
 
-        <div class="projects-grid">
-          <article v-for="p in recentProjects" :key="p.id" class="project-card">
-            <div class="card-header">
-              <h3 class="project-title">{{ p.name }}</h3>
-              <StatusPill :tone="statusTone(p.status)">{{ p.status }}</StatusPill>
-            </div>
-            <p v-if="p.description" class="project-desc">{{ p.description }}</p>
-            <p v-else class="project-desc muted-placeholder">No description provided.</p>
-            <div class="card-footer">
-              <span class="date-text">Created {{ new Date(p.createdAt).toLocaleDateString() }}</span>
-              <NuxtLink :to="`/app/projects/${p.id}`" class="open-link">Open workspace →</NuxtLink>
-            </div>
-          </article>
-        </div>
-      </div>
-    </div>
+        <ul class="projects-grid" aria-label="Recent projects">
+          <li v-for="project in recentProjects" :key="project.id" class="grid-item">
+            <ProjectCard :project="project" />
+          </li>
+        </ul>
+      </section>
+    </template>
   </section>
 </template>
 
 <style scoped>
 .dashboard-page {
-  max-width: 1080px;
+  max-width: var(--container);
+  margin: 0 auto;
+  padding-bottom: 1rem;
 }
-.welcome-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-.eyebrow {
-  color: #176b65;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 0.8rem;
-  margin: 0 0 0.35rem;
-}
-h1 {
-  margin: 0 0 0.35rem;
-  font-size: 1.8rem;
-  color: #17212b;
-}
-.muted {
-  color: #52606d;
-  margin: 0;
-  font-size: 1rem;
-}
-.header-actions {
-  display: flex;
-  gap: 0.75rem;
-}
-.btn-primary {
-  display: inline-block;
-  background: #176b65;
-  color: #fff;
-  padding: 0.6rem 1rem;
-  border-radius: 4px;
-  text-decoration: none;
-  font-weight: 700;
-  font-size: 0.9rem;
-  transition: background-color 0.15s ease;
-}
-.btn-primary:hover {
-  background: #134d48;
-}
-.btn-sm {
-  padding: 0.45rem 0.8rem;
-  font-size: 0.85rem;
-}
-.state-container {
+
+.state-block {
   margin: 2rem 0;
 }
+
 .retry-btn {
   margin-top: 0.75rem;
 }
-.empty-wrap {
-  margin: 1.5rem 0;
-}
-.dashboard-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.25rem;
-}
-.summary-card {
-  background: #fff;
-  border: 1px solid #d4dfdd;
-  border-radius: 8px;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-}
-.card-label {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 700;
-  color: #68777c;
-  margin-bottom: 0.5rem;
-}
-.card-value {
-  font-size: 2.2rem;
-  font-weight: 800;
-  color: #17212b;
-  margin-bottom: 0.5rem;
-}
-.card-link {
-  color: #176b65;
+
+.btn-primary {
+  display: inline-block;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-md);
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.9rem;
-  margin-top: auto;
+  transition: background-color var(--motion-fast) ease;
 }
-.card-link:hover {
-  text-decoration: underline;
+
+.btn-primary:hover {
+  background: var(--color-accent-strong);
 }
-.action-card {
-  background: #f0f7f6;
-  border-color: #b9cdca;
+
+.btn-primary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
-.action-desc {
-  color: #52606d;
-  margin: 0 0 1rem;
-  font-size: 0.95rem;
-}
-.recent-section {
+
+.recent {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-.section-heading {
+
+.section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
 }
-.section-heading h2 {
+
+.section-head h2 {
   margin: 0;
   font-size: 1.25rem;
-  color: #17212b;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
 }
-.view-all-link {
-  color: #176b65;
+
+.section-link {
+  color: var(--color-accent);
   text-decoration: none;
   font-weight: 600;
   font-size: 0.9rem;
 }
-.view-all-link:hover {
+
+.section-link:hover {
   text-decoration: underline;
 }
+
+.section-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
 .projects-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
-.project-card {
-  background: #fff;
-  border: 1px solid #d4dfdd;
-  border-radius: 8px;
-  padding: 1.25rem;
+
+.grid-item {
   display: flex;
-  flex-direction: column;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
-.project-card:hover {
-  border-color: #176b65;
-  box-shadow: 0 4px 12px rgba(23, 107, 101, 0.08);
+
+.grid-item > * {
+  flex: 1;
 }
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
-}
-.project-title {
-  margin: 0;
-  font-size: 1.05rem;
-  color: #17212b;
-}
-.project-desc {
-  color: #52606d;
-  font-size: 0.9rem;
-  margin: 0 0 1.25rem;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.muted-placeholder {
-  color: #8b949e;
-  font-style: italic;
-}
-.card-footer {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 0.75rem;
-  border-top: 1px solid #eef1f5;
-}
-.date-text {
-  font-size: 0.8rem;
-  color: #68777c;
-}
-.open-link {
-  color: #176b65;
-  text-decoration: none;
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-.open-link:hover {
-  text-decoration: underline;
-}
-@media (max-width: 720px) {
-  .welcome-header {
-    flex-direction: column;
-  }
-  .summary-cards,
+
+@media (min-width: 680px) {
   .projects-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1080px) {
+  .projects-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary {
+    transition: none;
   }
 }
 </style>
