@@ -1,111 +1,86 @@
 <script setup lang="ts">
-import { APP_NAME } from "@icooro/shared";
+/**
+ * Public landing page (F1).
+ *
+ * The page is a thin composition layer: every string, link and accent comes
+ * from the typed content payload in `~/landing/content`, and each section is
+ * a focused reusable component under `components/landing/`. Swapping the local
+ * payload for CMS-backed data later should not require touching this file's
+ * template.
+ *
+ * The page renders without the default public layout because it owns its own
+ * header and footer; `/login` and `/signup` keep the existing layout.
+ */
+import { landingContent } from "~/landing/content";
+import LandingHeader from "~/components/landing/LandingHeader.vue";
+import LandingHero from "~/components/landing/LandingHero.vue";
+import LandingWorkflow from "~/components/landing/LandingWorkflow.vue";
+import LandingFeatures from "~/components/landing/LandingFeatures.vue";
+import LandingShowcase from "~/components/landing/LandingShowcase.vue";
+import LandingCta from "~/components/landing/LandingCta.vue";
+import LandingFooter from "~/components/landing/LandingFooter.vue";
 
-definePageMeta({ layout: "default" });
+definePageMeta({ layout: false });
+
+useSeoMeta({
+  title: landingContent.seo.title,
+  description: landingContent.seo.description,
+  ogTitle: landingContent.seo.title,
+  ogDescription: landingContent.seo.description,
+  ogType: "website",
+});
 </script>
 
 <template>
-  <main class="page">
-    <section class="hero">
-      <p class="eyebrow">{{ APP_NAME }}</p>
-      <h1>AI-native video production, end to end.</h1>
-      <p class="lede">
-        Plan stories, build episodes, and generate media with a single workspace.
-      </p>
-      <div class="actions">
-        <NuxtLink to="/app" class="cta">Open the app</NuxtLink>
-        <NuxtLink to="/signup" class="secondary">Create an account</NuxtLink>
-      </div>
-    </section>
-    <section class="features">
-      <article>
-        <h2>Story</h2>
-        <p>Episodes, scripts, scenes, and shots — planned together.</p>
-      </article>
-      <article>
-        <h2>Media</h2>
-        <p>Generate, version, and approve assets in one place.</p>
-      </article>
-      <article>
-        <h2>Generations</h2>
-        <p>Submit, poll, and persist provider results with a single click.</p>
-      </article>
-    </section>
-  </main>
+  <div id="top" class="landing-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <LandingHeader :brand="landingContent.brand" :content="landingContent.header" />
+
+    <main id="main-content" class="landing-main">
+      <LandingHero :content="landingContent.hero" />
+      <LandingWorkflow :content="landingContent.workflow" />
+      <LandingFeatures :content="landingContent.features" />
+      <LandingShowcase :content="landingContent.showcase" />
+      <LandingCta :content="landingContent.closingCta" />
+    </main>
+
+    <LandingFooter :brand="landingContent.brand" :content="landingContent.footer" />
+  </div>
 </template>
 
 <style scoped>
-.page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 4rem 1.5rem 6rem;
-  color: #17212b;
-  font-family: system-ui, sans-serif;
+.landing-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-.hero {
-  text-align: center;
-  margin-bottom: 4rem;
+
+.landing-main {
+  flex: 1;
 }
-.eyebrow {
-  color: #4c6fff;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin: 0 0 1rem;
-}
-h1 {
-  font-size: clamp(2.25rem, 5vw, 3.5rem);
-  margin: 0 0 1rem;
-}
-.lede {
-  color: #52606d;
-  font-size: 1.1rem;
-  margin: 0 0 2rem;
-}
-.actions {
-  display: inline-flex;
-  gap: 0.75rem;
-}
-.cta {
-  display: inline-block;
-  background: #304fd8;
-  color: #fff;
-  padding: 0.75rem 1.1rem;
-  border-radius: 6px;
+
+.skip-link {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.75rem;
+  z-index: 50;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: 600;
   text-decoration: none;
-  font-weight: 700;
+  transform: translateY(-300%);
 }
-.secondary {
-  display: inline-block;
-  background: #eef1ff;
-  color: #243da8;
-  padding: 0.75rem 1.1rem;
-  border-radius: 6px;
-  text-decoration: none;
-  font-weight: 700;
-}
-.features {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.25rem;
-}
-.features article {
-  background: #fff;
-  border: 1px solid #dbe2ea;
-  border-radius: 8px;
-  padding: 1.5rem;
-}
-.features h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.15rem;
-}
-.features p {
-  color: #52606d;
-  margin: 0;
-}
-@media (max-width: 760px) {
-  .features {
-    grid-template-columns: 1fr;
-  }
+
+.skip-link:focus {
+  transform: none;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 </style>

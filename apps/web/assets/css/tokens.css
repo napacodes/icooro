@@ -1,0 +1,145 @@
+/*
+ * Icooro design tokens.
+ *
+ * Light theme is the default (`:root`). Dark theme is applied when the
+ * document root carries `data-theme="dark"` — set by the pre-paint bootstrap
+ * script registered in nuxt.config.ts and kept in sync by `useTheme()`.
+ *
+ * These tokens are intentionally semantic (surface / border / text / accent)
+ * rather than literal palette steps, so a CMS or a future admin theme can
+ * swap values without touching presentation components.
+ *
+ * Existing application pages keep their own hardcoded styles; nothing here
+ * changes their rendering. The landing page is the first consumer.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Brand — a single restrained blue accent. */
+  --color-accent: #2563eb;
+  --color-accent-strong: #1d4ed8;
+  --color-accent-soft: #eaf0ff;
+  --color-accent-contrast: #ffffff;
+
+  /* Surfaces. */
+  --color-bg: #f7f9fc;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f1f4f9;
+  --color-surface-raised: #ffffff;
+
+  /* Lines. */
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+
+  /* Text. */
+  --color-text: #0f172a;
+  --color-text-muted: #4a5768;
+  --color-text-faint: #6b7787;
+
+  /* Status accents (used sparingly). */
+  --color-success: #0f766e;
+  --color-success-soft: #e3f4f1;
+  --color-pending: #94a3b8;
+  --color-pending-soft: #eef2f7;
+
+  /* Interaction. */
+  --focus-ring: #2563eb;
+
+  /* Elevation. */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 12px 30px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.16);
+
+  /* Shape. */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
+
+  /* Layout. */
+  --container: 1140px;
+  --header-height: 68px;
+
+  /* Motion. */
+  --motion-fast: 140ms;
+  --motion-slow: 260ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-accent: #5b8cff;
+  --color-accent-strong: #7aa2ff;
+  --color-accent-soft: #17233d;
+  --color-accent-contrast: #08111f;
+
+  --color-bg: #0a1020;
+  --color-surface: #111a2e;
+  --color-surface-subtle: #16213a;
+  --color-surface-raised: #141e35;
+
+  --color-border: #25314d;
+  --color-border-strong: #37476a;
+
+  --color-text: #e9eef8;
+  --color-text-muted: #a4b2c8;
+  --color-text-faint: #8797ae;
+
+  --color-success: #5eead4;
+  --color-success-soft: #102b2c;
+  --color-pending: #7c8aa3;
+  --color-pending-soft: #18223a;
+
+  --focus-ring: #7aa2ff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* Smooth in-page anchor scrolling, disabled when the user asks for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/*
+ * The landing page owns the full viewport width. Existing pages keep the
+ * default body margin so their rendering is untouched.
+ */
+body:has(.landing-page) {
+  margin: 0;
+  background: var(--color-bg);
+}
+
+/* Respect the OS "reduce motion" setting for landing page motion and smooth scrolling. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-page *,
+  .landing-page *::before,
+  .landing-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Keep anchored sections clear of the sticky landing header. */
+.landing-page [id] {
+  scroll-margin-top: calc(var(--header-height) + 1rem);
+}
+
+/* Visually hidden but available to assistive technology. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
